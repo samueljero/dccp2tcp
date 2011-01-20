@@ -1,0 +1,52 @@
+This program converts a DCCP (Datagram Congestion Control Protocol) packet capture
+in PCAP format into a TCP packet capture in PCAP format with the intention that
+that capture be analysed with tcptrace (http://www.tcptrace.org) in order to generate
+graphs/stats to understand the DCCP protocol.
+
+
+In order to build this program, please simply type make at the commandline. I have not
+included a ./configure script with this program because this program will only compile
+on linux anyway (we need the dccp header include file) and it comprises only one file.
+If you have problems, simply modify the make file as needed. Contact me, if major problems
+arise.
+
+
+Usage is pretty simple:
+dccp2tcp dccp_file tcp_file [-d] [-y] [-g] [-s]
+	-d is debug
+	-y shifts the window line in tcptrace (yellow) to the highest received acknowledgment. Normally this line is just a constant amount more than the ack number(i.e. useless).
+	-g shifts the ack line in tcptrace (green) to the highest received acknowledgment. Normally this line is the standard TCP ack number, which, for DCCP, translates to the highest contiguous acknowledgement in the ack vector.
+	-s converts the DCCP ack vector to TCP SACKS.
+
+For typical usage, you probably just want -s.
+
+
+This program does have several important limitations:
+	1)Supports only a single DCCP contection per capture.
+	2)Source Port can't equal Destination Port. If the two are equal, this program will get very confused.
+	3)DCCP MUST use 48 bit sequence numbers.
+	4)Checksums are not computed (they are zeroed).
+	5)Only converts those packet types used by the Linux implementation at this date
+	6)DCCP Ack packets show up as TCP packets containing one byte
+	7)Very little error checking of packet headers, it's research software afterall
+
+
+
+dccp2tcp is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+dccp2tcp is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with dccp2tcp.  If not, see <http://www.gnu.org/licenses/>.
+
+
+Copyright 2010
+Samuel Jero
+Computer Science student, Ohio University
+sj323707@ohio.edu

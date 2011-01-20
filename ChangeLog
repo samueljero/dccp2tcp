@@ -1,0 +1,28 @@
+01/19/2011:
+	Release 1.1
+	Bug Fixes:
+	1)Ack Vector computations were using one byte beyond the ack vector.
+	2)Ack Vector to SACK was using one byte beyond the ack vector.
+	Improvements:
+	1)All error output now goes to stderr
+	2)Multiple Debug Levels
+	3)Moved includes, struct defs, and some functions defs to a header file
+	New Features:
+	1)Sync and SyncAck packets now have zero data and zero window. This makes them show up more easily in Tcptrace
+
+
+12/22/2010:
+	Release 1.0
+	Initial Public Release
+	Features:
+	1)Converts DCCP to TCP
+	2)Optional ack vectors to SACKS
+	3)Optional Window to highest ack
+	Bugs:
+	1)Supports only a single DCCP connection per capture.
+	2)Source Port can't equal Destination Port. If the two are equal, this program will get very confused.
+	3)DCCP MUST use 48 bit sequence numbers.
+	4)Checksums are not computed (they are zeroed).
+	5)Only converts those packet types used by the Linux implementation at this date
+	6)DCCP Ack packets show up as TCP packets containing one byte
+	7)Very little error checking of packet headers, it's research software afterall
