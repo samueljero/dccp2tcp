@@ -1,7 +1,7 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 1/2011
+Date: 2/2011
 
 Description: Program to convert a DCCP flow to a TCP flow for DCCP analysis via
 		tcptrace.
@@ -36,7 +36,7 @@ void handle_packet(u_char *user, const struct pcap_pkthdr *h, const u_char *byte
 void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata);
 unsigned int interp_ack_vect(u_char* hdr);
 u_int32_t initialize_seq(struct seq_num **seq, __be16 source, __be32 initial);
-u_int32_t add_new_seq(struct seq_num *seq, __be32 num, int ack);
+u_int32_t add_new_seq(struct seq_num *seq, __be32 num, int size, enum dccp_pkt_type type);
 u_int32_t convert_ack(struct seq_num *seq, __be32 num);
 int acked_packet_size(struct seq_num *seq, __be32 num);
 void ack_vect2sack(struct seq_num *seq, struct tcphdr *tcph, u_char* tcpopts, u_char* dccphdr, __be32 dccpack);
@@ -288,7 +288,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			}else{
 				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
 			}
-			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),datalength));
+			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),datalength, dccph->dccph_type));
 			if(yellow){
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s2, ntohl(dccphack->dccph_ack_nr_low)));
 			}
@@ -301,7 +301,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			}else{
 				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
 			}
-			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),datalength));
+			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),datalength,dccph->dccph_type));
 			if(yellow){
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s1, ntohl(dccphack->dccph_ack_nr_low)));
 			}
@@ -324,7 +324,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 		h->caplen=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4 + datalength;
 
 		/*set length in ip header*/
-		iph->tot_len=htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + datalength);	
+		iph->tot_len=htons(sizeof(struct iphdr) + tcph->doff*4 + datalength);
 	}
 
 	if(dccph->dccph_type==DCCP_PKT_ACK){ //DCCP ACK -->TCP ACK with no data
@@ -335,7 +335,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			}else{
 				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
 			}
-			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),1));
+			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
 			if(yellow){
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*1400);
 				if(-interp_ack_vect((u_char*)dccph)*1400 > 65535){
@@ -351,7 +351,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			}else{
 				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
 			}
-			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),1));
+			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
 			if(yellow){
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*1400);
 				if(-interp_ack_vect((u_char*)dccph)*1400 > 65535){
@@ -369,11 +369,11 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 		tcph->rst=0;
 
 		/*set libpcap header lengths*/
-		h->len=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4+ 1;
-		h->caplen=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4+ 1;
+		h->len=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4 + 1;
+		h->caplen=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4 + 1;
 
 		/*set length in ip header*/
-		iph->tot_len=htons(sizeof(struct iphdr) + tcph->doff*4+ 1);
+		iph->tot_len=htons(sizeof(struct iphdr) + tcph->doff*4 + 1);
 	}
 
 	if(dccph->dccph_type==DCCP_PKT_CLOSEREQ){//DCCP CLOSEREQ----Never seen in packet capture
@@ -389,7 +389,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			}else{
 				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
 			}
-			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),1));
+			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
 			if(yellow){
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s2, ntohl(dccphack->dccph_ack_nr_low)));
 			}
@@ -402,7 +402,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			}else{
 				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
 			}
-			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),1));
+			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
 			if(yellow){
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s1, ntohl(dccphack->dccph_ack_nr_low)));
 			}
@@ -432,7 +432,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			}else{
 				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
 			}
-			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),1));
+			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
 			if(yellow){
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s2, ntohl(dccphack->dccph_ack_nr_low)));
 			}
@@ -445,7 +445,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			}else{
 				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
 			}
-			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),1));
+			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
 			if(yellow){
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s1, ntohl(dccphack->dccph_ack_nr_low)));
 			}
@@ -475,7 +475,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			}else{
 				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
 			}
-			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),0));
+			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),0,dccph->dccph_type));
 			if(yellow){
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s2, ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -490,7 +490,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			}else{
 				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
 			}
-			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),0));
+			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),0,dccph->dccph_type));
 			if(yellow){
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s1, ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -522,14 +522,14 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			}else{
 				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
 			}
-			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),0));
+			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),0,dccph->dccph_type));
 			if(yellow){
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s2, ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
 				tcph->window=htons(0);
 			}
 			if(sack){
-				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low));
 			}
 		}else{
 			if(green){
@@ -537,7 +537,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			}else{
 				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
 			}
-			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),0));
+			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),0,dccph->dccph_type));
 			if(yellow){
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s1, ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -655,14 +655,14 @@ u_int32_t initialize_seq(struct seq_num **seq, __be16 source, __be32 initial)
 	/*add first sequence number*/
 	(*seq)->table[0].old=initial;
 	(*seq)->table[0].new=initial;
-	(*seq)->table[0].size=1; /* size is actually zero; this is a convient way to get
-				    these packets counted in the sequence number space*/
+	(*seq)->table[0].type=DCCP_PKT_REQUEST;
+	(*seq)->table[0].size=0;
 return initial;
 }
 
 
 /*Convert Sequence Numbers*/
-u_int32_t add_new_seq(struct seq_num *seq, __be32 num, int size)
+u_int32_t add_new_seq(struct seq_num *seq, __be32 num, int size, enum dccp_pkt_type type)
 {
 	int prev;
 	if(seq==NULL){
@@ -678,14 +678,29 @@ u_int32_t add_new_seq(struct seq_num *seq, __be32 num, int size)
 		seq->table[seq->cur].old=seq->table[prev].old+1;
 		seq->table[seq->cur].new=seq->table[prev].new + seq->table[prev].size;
 		seq->table[seq->cur].size=size;
+		seq->table[seq->cur].type=type;
 	}
 
 	prev=seq->cur;
 	seq->cur=(seq->cur+1)%(seq->size);/*find next available table slot*/
 	seq->table[seq->cur].old=num;
-	seq->table[seq->cur].new=seq->table[prev].new + seq->table[prev].size;
 	seq->table[seq->cur].size=size;
-return seq->table[seq->cur].new;
+	seq->table[seq->cur].type=type;
+	if(seq->table[prev].type==DCCP_PKT_REQUEST || seq->table[prev].type==DCCP_PKT_RESPONSE){
+		seq->table[seq->cur].new=seq->table[prev].new + seq->table[prev].size;
+		seq->table[seq->cur].size=1;
+		return seq->table[prev].new + seq->table[prev].size+1;
+	}
+	if(type==DCCP_PKT_DATA || type==DCCP_PKT_DATAACK || type==DCCP_PKT_ACK){
+		seq->table[seq->cur].new=seq->table[prev].new + seq->table[prev].size;
+		return seq->table[seq->cur].new+1;
+	}
+	if(type==DCCP_PKT_SYNC || type==DCCP_PKT_SYNCACK){
+		seq->table[seq->cur].new=seq->table[prev].new + seq->table[prev].size;
+		return seq->table[seq->cur].new;
+	}
+	seq->table[seq->cur].new=seq->table[prev].new + seq->table[prev].size;
+return seq->table[seq->cur].new +1;
 }
 
 
@@ -700,7 +715,7 @@ u_int32_t convert_ack(struct seq_num *seq, __be32 num)
 	/*loop through table looking for the DCCP ack number*/
 	for(int i=0; i < seq->size; i++){
 		if(seq->table[i].old==num){
-			return 	seq->table[i].new +1; /*TCP acks the sequence number plus 1*/
+			return 	seq->table[i].new + seq->table[i].size + 1; /*TCP acks the sequence number plus 1*/
 		}
 	}
 	

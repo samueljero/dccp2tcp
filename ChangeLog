@@ -1,3 +1,8 @@
+02/01/2011:
+	Release 1.2
+	Bug Fixes:
+	1)Sequence number adjustments so that Tcptrace RTT graphing/statistics now work
+
 01/19/2011:
 	Release 1.1
 	Bug Fixes:

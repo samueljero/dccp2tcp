@@ -1,7 +1,7 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 1/2011
+Date: 2/2011
 
 Description: Header file for program to convert a DCCP flow to a TCP flow for DCCP
  	 	 analysis via tcptrace.
@@ -61,6 +61,7 @@ struct tbl{
 	__be32 		old;	/*DCCP sequence number */
 	u_int32_t	new;	/*TCP sequence number */
 	int		size;		/*packet size*/
+	enum dccp_pkt_type type; /*packet type*/
 };
 
 /*Option flags*/
