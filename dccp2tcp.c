@@ -1,7 +1,7 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 2/2011
+Date: 4/2011
 
 Description: Program to convert a DCCP flow to a TCP flow for DCCP analysis via
 		tcptrace.
@@ -33,7 +33,7 @@ struct seq_num	*s2;	/*sequence number structure for side two of connection*/
 void PcapSavePacket(struct pcap_pkthdr *h, u_char *data);
 void process_packets();
 void handle_packet(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes);
-void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata);
+void convert_packet(struct pcap_pkthdr *h, u_char **ndata, int *nlength, const u_char **odata, int *length);
 unsigned int interp_ack_vect(u_char* hdr);
 u_int32_t initialize_seq(struct seq_num **seq, __be16 source, __be32 initial);
 u_int32_t add_new_seq(struct seq_num *seq, __be32 num, int size, enum dccp_pkt_type type);
@@ -139,24 +139,35 @@ return 0;
 /*call back function for pcap_loop--do basic packet handling*/
 void handle_packet(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
 {
-	u_char *ndata;
-	struct pcap_pkthdr nh;
+	u_char 				*ndata;
+	u_char 				*nptr;
+	int					length;
+	int					nlength;
+	struct pcap_pkthdr 	nh;
 
 	/*create new libpcap header*/
 	memcpy(&nh, h, sizeof(struct pcap_pkthdr));
+	length=h->caplen;
+	nlength=MAX_PACKET;
 
 	/*create buffer for new packet*/
-	ndata=malloc(MAX_PACKET);
+	nptr=ndata=malloc(MAX_PACKET);
 	if(ndata==NULL){
 		dbgprintf(0,"Error: Couldn't allocate Memory\n");
 		exit(1);
 	}
 
 	/*make sure the packet is all zero*/
-	memset(ndata, 0, MAX_PACKET);	
+	memset(nptr, 0, MAX_PACKET);
 	
 	/*do all the fancy conversions*/
-	convert_packet(&nh, bytes, ndata);
+	if(eth_ip_encap_pre(&nh, &nptr, &nlength, &bytes, &length)<0){
+		return;
+	}
+	convert_packet(&nh, &nptr, &nlength, &bytes, &length);
+	if(eth_ip_encap_post(&nh, &ndata, &nlength)<0){
+		return;
+	}
 
 	/*save packet*/
 	pcap_dump(user,&nh, ndata);
@@ -167,31 +178,19 @@ return;
 
 
 /*do all the dccp to tcp conversions*/
-void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
+void convert_packet(struct pcap_pkthdr *h, u_char **ndata, int *nlength, const u_char **odata, int *length)
 {	
-	u_char* ncur=ndata;
-	const u_char* ocur=odata;
-	int length=h->caplen;
-	struct iphdr *iph;
+	u_char* ncur=*ndata;
+	const u_char* ocur=*odata;
 	struct tcphdr *tcph;
 	struct dccp_hdr *dccph;
 	struct dccp_hdr_ext *dccphex;
 	struct dccp_hdr_ack_bits *dccphack;
 	int datalength;
+	int	len=0;
 	const u_char* pd;
 	u_char* npd;
 	u_char* tcpopt;
-
-	/*copy ethernet and ip headers over*/
-	memcpy(ncur, ocur, sizeof(struct ether_header)+sizeof(struct iphdr) );
-	ocur+=sizeof(struct ether_header)+ sizeof(struct iphdr);
-	ncur+=sizeof(struct ether_header) +sizeof(struct iphdr);
-	length-=sizeof(struct ether_header) +sizeof(struct iphdr);
-
-	/*set ip to indicate that tcp is next protocol*/
-	iph= (struct iphdr *) (ncur - sizeof(struct iphdr));
-	iph->protocol=6;
-	iph->check=htonl(0);
 
 	/*cast header pointers*/
 	tcph=(struct tcphdr*)ncur;
@@ -203,8 +202,8 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 	dbgprintf(2,"Sequence Number: %llu\n", (unsigned long long)(((unsigned long)ntohs(dccph->dccph_seq)<<32) + ntohl(dccphex->dccph_seq_low)));
 
 	/*determine data length*/
-	datalength=ntohs(iph->tot_len) - sizeof(struct iphdr) - dccph->dccph_doff*4;
-	pd=odata + sizeof(struct ether_header)+sizeof(struct iphdr) + dccph->dccph_doff*4;
+	datalength=*length - dccph->dccph_doff*4;
+	pd=*odata + dccph->dccph_doff*4;
 
 	/*set tcp standard features*/
 	tcph->source=dccph->dccph_sport;
@@ -218,61 +217,61 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 		tcph->window=htons(30000);
 	}
 
+	/*Only accept the first connection*/
+	if(s1 && s2 && dccph->dccph_sport!=s1->addr && dccph->dccph_dport!=s1->addr){
+		return;
+	}
+
 	/*make changes by packet type*/
 	if(dccph->dccph_type==DCCP_PKT_REQUEST){//DCCP REQUEST -->TCP SYN
 		dbgprintf(2,"Packet Type: Request\n");
+		if(!s1){
+			if(yellow){
+				tcph->window=htons(0);
+			}
+			tcph->ack_seq=htonl(0);
+			tcph->seq=htonl(initialize_seq(&s1, dccph->dccph_sport, ntohl(dccphex->dccph_seq_low)));
+			tcph->syn=1;
+			tcph->ack=0;
+			tcph->fin=0;
+			tcph->rst=0;
 
-		if(yellow){
-			tcph->window=htons(0);
+			/* add Sack-permitted option, if relevant*/
+			if(sack){
+				*tcpopt=4;
+				tcpopt++;
+				*tcpopt=2;
+				tcph->doff++;
+			}
+
+			/*calculate length*/
+			len=tcph->doff*4;
 		}
-		tcph->ack_seq=htonl(0);
-		tcph->seq=htonl(initialize_seq(&s1, dccph->dccph_sport, ntohl(dccphex->dccph_seq_low)));
-		tcph->syn=1;
-		tcph->ack=0;
-		tcph->fin=0;
-		tcph->rst=0;
-
-		/* add Sack-permitted option, if relevant*/
-		if(sack){
-			*tcpopt=4;
-			tcpopt++;
-			*tcpopt=2;
-			tcph->doff++;
-		}
-
-		/*set libpcap header lengths*/
-		h->len=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4;
-		h->caplen=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4;
-
-		/*set length in ip header*/
-		iph->tot_len=htons(sizeof(struct iphdr) + tcph->doff*4);
 	}
 
 	if(dccph->dccph_type==DCCP_PKT_RESPONSE){//DCCP RESPONSE-->TCP SYN,ACK
 		dbgprintf(2,"Packet Type: Response\n");
-		tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
-		if(yellow){
-			tcph->window=htons(0);
+		if(s1 && !s2){
+			tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
+			if(yellow){
+				tcph->window=htons(0);
+			}
+			tcph->seq=htonl(initialize_seq(&s2, dccph->dccph_sport, ntohl(dccphex->dccph_seq_low)));
+			tcph->syn=1;
+			tcph->ack=1;
+			tcph->fin=0;
+			tcph->rst=0;
+
+			/* add Sack-permitted option, if relevant*/
+			if(sack){
+				*tcpopt=4;
+				*(tcpopt+1)=2;
+				tcph->doff++;
+			}
+
+			/*calculate length*/
+			len=tcph->doff*4;
 		}
-		tcph->seq=htonl(initialize_seq(&s2, dccph->dccph_sport, ntohl(dccphex->dccph_seq_low)));
-		tcph->syn=1;
-		tcph->ack=1;
-		tcph->fin=0;
-		tcph->rst=0;
-
-		/* add Sack-permitted option, if relevant*/
-		if(sack){
-			*tcpopt=4;
-			*(tcpopt+1)=2;
-			tcph->doff++;
-		}
-
-		/*set libpcap header lengths*/
-		h->len=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4;
-		h->caplen=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4;
-
-		/*set length in ip header*/
-		iph->tot_len=htons(sizeof(struct iphdr) + tcph->doff*4);
 	}
 
 	if(dccph->dccph_type==DCCP_PKT_DATA){//DCCP DATA----Never seen in packet capture
@@ -282,7 +281,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 
 	if(dccph->dccph_type==DCCP_PKT_DATAACK){//DCCP DATAACK-->TCP ACK with data
 		dbgprintf(2,"Packet Type: DataAck\n");
-		if(s1 && dccph->dccph_sport==s1->addr){ //determine which side of connection is sending this packet
+		if(s1 && s2 && dccph->dccph_sport==s1->addr){ //determine which side of connection is sending this packet
 			if(green){
 				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -295,7 +294,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			if(sack){
 				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
-		}else{
+		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
 			if(green){
 				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -316,20 +315,16 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 		tcph->rst=0;
 
 		/*copy data*/
-		npd=ndata+ sizeof(struct ether_header)+sizeof(struct iphdr)+ tcph->doff*4;
+		npd=*ndata + tcph->doff*4;
 		memcpy(npd, pd, datalength);
 
-		/*set libpcap header lengths*/
-		h->len=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4 + datalength;
-		h->caplen=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4 + datalength;
-
-		/*set length in ip header*/
-		iph->tot_len=htons(sizeof(struct iphdr) + tcph->doff*4 + datalength);
+		/*calculate length*/
+		len= tcph->doff*4 + datalength;
 	}
 
 	if(dccph->dccph_type==DCCP_PKT_ACK){ //DCCP ACK -->TCP ACK with no data
 		dbgprintf(2,"Packet Type: Ack\n");
-		if(s1 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
+		if(s1 && s2 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
 			if(green){
 				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -345,7 +340,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			if(sack){
 				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
-		}else{
+		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
 			if(green){
 				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -368,12 +363,8 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 		tcph->fin=0;
 		tcph->rst=0;
 
-		/*set libpcap header lengths*/
-		h->len=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4 + 1;
-		h->caplen=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4 + 1;
-
-		/*set length in ip header*/
-		iph->tot_len=htons(sizeof(struct iphdr) + tcph->doff*4 + 1);
+		/*calculate length*/
+		len=tcph->doff*4 + 1;
 	}
 
 	if(dccph->dccph_type==DCCP_PKT_CLOSEREQ){//DCCP CLOSEREQ----Never seen in packet capture
@@ -383,7 +374,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 
 	if(dccph->dccph_type==DCCP_PKT_CLOSE){//DCCP CLOSE-->TCP FIN,ACK
 		dbgprintf(2,"Packet Type: Close\n");
-		if(s1 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
+		if(s1 && s2 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
 			if(green){
 				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -396,7 +387,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			if(sack){
 				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
-		}else{
+		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
 			if(green){
 				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -416,17 +407,13 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 		tcph->fin=1;
 		tcph->rst=0;
 
-		/*set libpcap header lengths*/
-		h->len=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4;
-		h->caplen=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4;
-
-		/*set length in ip header*/
-		iph->tot_len=htons(sizeof(struct iphdr) + tcph->doff*4);
+		/*calculate length*/
+		len=tcph->doff*4;
 	}
 
 	if(dccph->dccph_type==DCCP_PKT_RESET){//DCCP RESET-->TCP FIN,ACK (only seen at end of connection as CLOSE ACK)
 		dbgprintf(2,"Packet Type: Reset\n");
-		if(s1 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
+		if(s1 && s2 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
 			if(green){
 				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -439,7 +426,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			if(sack){
 				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
-		}else{
+		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
 			if(green){
 				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -459,17 +446,13 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 		tcph->fin=1;
 		tcph->rst=0;
 
-		/*set libpcap header lengths*/
-		h->len=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4;
-		h->caplen=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4;
-
-		/*set length in ip header*/
-		iph->tot_len=htons(sizeof(struct iphdr) + tcph->doff*4);
+		/*calculate length*/
+		len=tcph->doff*4;
 	}
 
 	if(dccph->dccph_type==DCCP_PKT_SYNC){//DCCP SYNC
 		dbgprintf(2,"Packet Type: Sync\n");
-		if(s1 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
+		if(s1 && s2 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
 			if(green){
 				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -484,7 +467,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			if(sack){
 				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
-		}else{
+		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
 			if(green){
 				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -506,17 +489,13 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 		tcph->fin=0;
 		tcph->rst=0;
 
-		/*set libpcap header lengths*/
-		h->len=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4+ 0;
-		h->caplen=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4+ 0;
-
-		/*set length in ip header*/
-		iph->tot_len=htons(sizeof(struct iphdr) + tcph->doff*4+0);
+		/*calculate length*/
+		len=tcph->doff*4;
 	}
 
 	if(dccph->dccph_type==DCCP_PKT_SYNCACK){//DCCP SYNACK
 		dbgprintf(2,"Packet Type: SyncAck\n");
-		if(s1 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
+		if(s1 && s2 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
 			if(green){
 				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -531,7 +510,7 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 			if(sack){
 				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low));
 			}
-		}else{
+		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
 			if(green){
 				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
 			}else{
@@ -553,18 +532,16 @@ void convert_packet(struct pcap_pkthdr *h, const u_char *odata, u_char *ndata)
 		tcph->fin=0;
 		tcph->rst=0;
 
-		/*set libpcap header lengths*/
-		h->len=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4+0;
-		h->caplen=sizeof(struct ether_header) + sizeof(struct iphdr) + tcph->doff*4+0;
-
-		/*set length in ip header*/
-		iph->tot_len=htons(sizeof(struct iphdr) + tcph->doff*4+0);
+		/*calculate length*/
+		len=tcph->doff*4;
 	}
 
 	if(dccph->dccph_type==DCCP_PKT_INVALID){//DCCP INVALID----Never seen in packet capture
 		dbgprintf(0,"Invalid DCCP Packet!!\n");
 		exit(1);
 	}
+
+	*nlength=len;
 return;
 }
 

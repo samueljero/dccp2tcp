@@ -1,12 +1,12 @@
 ###############################################################################
 #Author: Samuel Jero
 #
-# Date: 10/2010
+# Date: 4/2011
 #
 # Makefile for program dccp2tcp
 ###############################################################################
 
-CFLAGS= -O2 -Wall -Werror
+CFLAGS= -O2 -Wall -Werror -g
 
 # for solaris, you probably want:
 #	LDLIBS = -lpcap -lnsl -lsocket
@@ -22,8 +22,14 @@ MANDIR = /usr/local/man
 
 all: dccp2tcp
 
-dccp2tcp: dccp2tcp.c dccp2tcp.h Makefile
-	gcc ${CFLAGS} ${LDLIBS} --std=gnu99 dccp2tcp.c -odccp2tcp
+dccp2tcp: dccp2tcp.o encap.o
+	gcc ${CFLAGS} ${LDLIBS} --std=gnu99 dccp2tcp.o encap.o -odccp2tcp
+
+dccp2tcp.o: dccp2tcp.h dccp2tcp.c
+	gcc ${CFLAGS} ${LDLIBS} --std=gnu99 -c dccp2tcp.c -odccp2tcp.o
+
+encap.o: encap.c dccp2tcp.h
+	gcc ${CFLAGS} ${LDLIBS} --std=gnu99 -c encap.c -oencap.o
 
 install: dccp2tcp
 	install -m 755 -o bin -g bin dccp2tcp ${BINDIR}/dccp2tcp
