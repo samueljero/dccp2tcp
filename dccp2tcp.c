@@ -1,7 +1,7 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 4/2011
+Date: 5/2011
 
 Description: Program to convert a DCCP flow to a TCP flow for DCCP analysis via
 		tcptrace.
@@ -23,7 +23,7 @@ int yellow=0;	/*tcptrace yellow line as currently acked packet*/
 int green=0;	/*tcptrace green line as currently acked packet*/
 int sack=0;		/*add TCP SACKS*/
 
-pcap_t*		in;			/*libpcap input file discriptor*/
+pcap_t*			in;			/*libpcap input file discriptor*/
 pcap_dumper_t	*out;	/*libpcap output file discriptor*/
 struct seq_num	*s1;	/*sequence number structure for side one of connection*/
 struct seq_num	*s2;	/*sequence number structure for side two of connection*/
@@ -33,7 +33,7 @@ struct seq_num	*s2;	/*sequence number structure for side two of connection*/
 void PcapSavePacket(struct pcap_pkthdr *h, u_char *data);
 void process_packets();
 void handle_packet(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes);
-void convert_packet(struct pcap_pkthdr *h, u_char **ndata, int *nlength, const u_char **odata, int *length);
+int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length);
 unsigned int interp_ack_vect(u_char* hdr);
 u_int32_t initialize_seq(struct seq_num **seq, __be16 source, __be32 initial);
 u_int32_t add_new_seq(struct seq_num *seq, __be32 num, int size, enum dccp_pkt_type type);
@@ -144,6 +144,10 @@ void handle_packet(u_char *user, const struct pcap_pkthdr *h, const u_char *byte
 	int					length;
 	int					nlength;
 	struct pcap_pkthdr 	nh;
+	int					link_type;
+
+	/*Determine the link type for this packet*/
+	link_type=pcap_datalink(in);
 
 	/*create new libpcap header*/
 	memcpy(&nh, h, sizeof(struct pcap_pkthdr));
@@ -161,11 +165,8 @@ void handle_packet(u_char *user, const struct pcap_pkthdr *h, const u_char *byte
 	memset(nptr, 0, MAX_PACKET);
 	
 	/*do all the fancy conversions*/
-	if(eth_ip_encap_pre(&nh, &nptr, &nlength, &bytes, &length)<0){
-		return;
-	}
-	convert_packet(&nh, &nptr, &nlength, &bytes, &length);
-	if(eth_ip_encap_post(&nh, &ndata, &nlength)<0){
+	if(!do_encap(link_type, &nh, &nptr, &nlength, &bytes, &length)){
+		free(ndata);
 		return;
 	}
 
@@ -178,10 +179,10 @@ return;
 
 
 /*do all the dccp to tcp conversions*/
-void convert_packet(struct pcap_pkthdr *h, u_char **ndata, int *nlength, const u_char **odata, int *length)
+int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length)
 {	
-	u_char* ncur=*ndata;
-	const u_char* ocur=*odata;
+	u_char* ncur=*nptr;
+	const u_char* ocur=*optr;
 	struct tcphdr *tcph;
 	struct dccp_hdr *dccph;
 	struct dccp_hdr_ext *dccphex;
@@ -203,7 +204,7 @@ void convert_packet(struct pcap_pkthdr *h, u_char **ndata, int *nlength, const u
 
 	/*determine data length*/
 	datalength=*length - dccph->dccph_doff*4;
-	pd=*odata + dccph->dccph_doff*4;
+	pd=*optr + dccph->dccph_doff*4;
 
 	/*set tcp standard features*/
 	tcph->source=dccph->dccph_sport;
@@ -219,7 +220,7 @@ void convert_packet(struct pcap_pkthdr *h, u_char **ndata, int *nlength, const u
 
 	/*Only accept the first connection*/
 	if(s1 && s2 && dccph->dccph_sport!=s1->addr && dccph->dccph_dport!=s1->addr){
-		return;
+		return 0;
 	}
 
 	/*make changes by packet type*/
@@ -315,7 +316,7 @@ void convert_packet(struct pcap_pkthdr *h, u_char **ndata, int *nlength, const u
 		tcph->rst=0;
 
 		/*copy data*/
-		npd=*ndata + tcph->doff*4;
+		npd=*nptr + tcph->doff*4;
 		memcpy(npd, pd, datalength);
 
 		/*calculate length*/
@@ -538,11 +539,11 @@ void convert_packet(struct pcap_pkthdr *h, u_char **ndata, int *nlength, const u
 
 	if(dccph->dccph_type==DCCP_PKT_INVALID){//DCCP INVALID----Never seen in packet capture
 		dbgprintf(0,"Invalid DCCP Packet!!\n");
-		exit(1);
+		return 0;
 	}
 
 	*nlength=len;
-return;
+return 1;
 }
 
 

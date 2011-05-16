@@ -1,7 +1,7 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 4/2011
+Date: 5/2011
 
 Description: Header file for program to convert a DCCP flow to a TCP flow for DCCP
  	 	 analysis via tcptrace.
@@ -83,11 +83,7 @@ extern struct seq_num	*s2;	/*sequence number structure for side two of connectio
  */
 void dbgprintf(int level, const char *fmt, ...);
 
-/* Encapsulation functions*/
-int eth_ip_encap_pre(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length);
-int eth_ip_encap_post(struct pcap_pkthdr *h, u_char** nptr, int *nlength);
-
-/*The Conversion Function*/
-void convert_packet(struct pcap_pkthdr *h, u_char **ndata, int *nlength, const u_char **odata, int *length);
+/*Function to parse encapsulation*/
+int do_encap(int link, struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length);
 
 #endif
