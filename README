@@ -20,7 +20,7 @@ dccp2tcp dccp_file tcp_file [-d] [-y] [-g] [-s]
 	-d is debug
 	-y shifts the window line in tcptrace (yellow) to the highest received acknowledgment. Normally this line is just a constant amount more than the ack number(i.e. useless).
 	-g shifts the ack line in tcptrace (green) to the highest received acknowledgment. Normally this line is the standard TCP ack number, which, for DCCP, translates to the highest contiguous acknowledgement in the ack vector.
-	-s converts the DCCP ack vector to TCP SACKS.
+	-s converts the DCCP ack vector to TCP SACKS. Specify -s twice to only see those Ack vectors with a loss interval in them. This is convenient way to see loss events.
 
 For typical usage, you probably just want -s.
 

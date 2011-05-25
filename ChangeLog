@@ -1,3 +1,9 @@
+05/25/2011:
+	Release 1.4:
+	Improvements:
+	1)Add double -s option to only show Ack Vectors/SACKS with loss events
+
+
 05/15/2011:
 	Release 1.3
 	Improvements:
@@ -6,11 +12,13 @@
 		 +Ethernet
 		 +Linux Cooked Capture (SLL)
 		 +IPv4
+
 	
 02/01/2011:
 	Release 1.2
 	Bug Fixes:
 	1)Sequence number adjustments so that Tcptrace RTT graphing/statistics now work
+
 
 01/19/2011:
 	Release 1.1

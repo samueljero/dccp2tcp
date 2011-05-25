@@ -80,7 +80,7 @@ int main(int argc, char *argv[])
 				green=1;
 			}
 			if(argv[i][1]=='s' && strlen(argv[i])==2){ /*sack option*/
-				sack=1;
+				sack++;
 			}
 		}
 	}
@@ -293,7 +293,9 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s2, ntohl(dccphack->dccph_ack_nr_low)));
 			}
 			if(sack){
-				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+					ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				}
 			}
 		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
 			if(green){
@@ -306,7 +308,10 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s1, ntohl(dccphack->dccph_ack_nr_low)));
 			}
 			if(sack){
-				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+					ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+
+				}
 			}
 		}
 
@@ -339,7 +344,9 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 				}
 			}
 			if(sack){
-				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+					ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				}
 			}
 		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
 			if(green){
@@ -355,7 +362,9 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 				}
 			}
 			if(sack){
-				ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+					ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				}
 			}
 		}
 
@@ -386,7 +395,9 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s2, ntohl(dccphack->dccph_ack_nr_low)));
 			}
 			if(sack){
-				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+					ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				}
 			}
 		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
 			if(green){
@@ -399,7 +410,9 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s1, ntohl(dccphack->dccph_ack_nr_low)));
 			}
 			if(sack){
-				ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+					ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				}
 			}
 		}
 
@@ -425,7 +438,9 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s2, ntohl(dccphack->dccph_ack_nr_low)));
 			}
 			if(sack){
-				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+					ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				}
 			}
 		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
 			if(green){
@@ -438,7 +453,9 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s1, ntohl(dccphack->dccph_ack_nr_low)));
 			}
 			if(sack){
-				ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+					ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				}
 			}
 		}
 
@@ -466,7 +483,9 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 				tcph->window=htons(0);
 			}
 			if(sack){
-				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+					ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				}
 			}
 		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
 			if(green){
@@ -481,7 +500,9 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 				tcph->window=htons(0);
 			}
 			if(sack){
-				ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+					ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				}
 			}
 		}
 
@@ -509,7 +530,9 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 				tcph->window=htons(0);
 			}
 			if(sack){
-				ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low));
+				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+					ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low));
+				}
 			}
 		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
 			if(green){
@@ -524,7 +547,9 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 				tcph->window=htons(0);
 			}
 			if(sack){
-				ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+					ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				}
 			}
 		}
 
@@ -547,7 +572,8 @@ return 1;
 }
 
 
-/*Parse Ack Vector Options*/
+/*Parse Ack Vector Options
+ * Returns the Number of packets since last recorded loss*/
 unsigned int interp_ack_vect(u_char* hdr)
 {
 	int hdrlen=((struct dccp_hdr*)hdr)->dccph_doff*4;
