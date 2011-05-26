@@ -773,7 +773,7 @@ void ack_vect2sack(struct seq_num *seq, struct tcphdr *tcph, u_char* tcpopts, u_
 	opt=dccphdr + sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext) + sizeof(struct dccp_hdr_ack_bits);
 
 	/*setup tcp pointers*/
-	num_blocks=2;
+	num_blocks=4;
 	*tcpopts=5;
 	tlen=tcpopts+1;
 	temp=tlen;

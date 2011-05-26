@@ -2,6 +2,8 @@
 	Release 1.4:
 	Improvements:
 	1)Add double -s option to only show Ack Vectors/SACKS with loss events
+	Bug Fixes:
+	1)Increase maximum number of TCP SACK segments to 4 (instead of two)
 
 
 05/15/2011:
