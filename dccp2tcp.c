@@ -620,6 +620,10 @@ unsigned int interp_ack_vect(u_char* hdr)
 				if((*cur & 0xC0)==0x00){ //received packet
 					bp+= (*cur & 0x3F)+1;
 				}
+
+				if(((*cur& 0xF0)!= 0xC0) && ((*cur& 0xF0)!= 0x00) && ((*cur& 0xF0)!= 0x40)){
+					dbgprintf(1, "Warning: Invalid Ack Vector!! (Linux will handle poorly!)\n");
+				}
 				tmp--;
 				cur++;
 			}
