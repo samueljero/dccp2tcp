@@ -1,4 +1,6 @@
 .cproject
 .project
+.hgignore
 dccp2tcp.tar.gz
 dccp2tcp.tar.gz.sig
+ccid3_captures
