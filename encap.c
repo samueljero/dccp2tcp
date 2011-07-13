@@ -1,7 +1,7 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 5/2011
+Date: 7/2011
 
 Description: Encapsulation Functions for DCCP conversion to TCP
 
@@ -11,24 +11,24 @@ Description: Encapsulation Functions for DCCP conversion to TCP
 #include "pcap/sll.h"
 
 /*Encapsulation start point and link layer selector*/
-int do_encap(int link, struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length)
+int do_encap(int link, struct packet *new, const struct const_packet *old)
 {
 	switch(link){
 		case DLT_EN10MB:
 				/*Ethernet*/
-				if(!ethernet_encap(h, nptr, nlength, optr, length)){
+				if(!ethernet_encap(new, old)){
 						return 0;
 				}
 				break;
 		case DLT_RAW:
 				/*Raw. Just IP*/
-				if(!ipv4_encap(h, nptr, nlength, optr, length)){
+				if(!ipv4_encap(new, old)){
 						return 0;
 				}
 				break;
 		case DLT_LINUX_SLL:
 				/*Linux Cooked Capture*/
-				if(!linux_cooked_encap(h, nptr, nlength, optr, length)){
+				if(!linux_cooked_encap(new, old)){
 					return 0;
 				}
 				break;
@@ -38,49 +38,47 @@ int do_encap(int link, struct pcap_pkthdr *h, u_char **nptr, int *nlength, const
 	}
 
 	/*Adjust libpcap header*/
-	if(h->caplen >= h->len || h->caplen >= *nlength){
-		h->caplen=*nlength;
+	if(new->h->caplen >= new->h->len || new->h->caplen >= new->length){
+		new->h->caplen=new->length;
 	}
-	h->len=*nlength;
+	new->h->len=new->length;
 
 return 1;
 }
 
 /*Standard Ethernet Encapsulation*/
-int ethernet_encap(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length)
+int ethernet_encap(struct packet *new, const struct const_packet *old)
 {
-		struct ether_header		*ethh;
-		int						next_len;
-		int						next_nlen;
-		u_char					*next_nptr;
-		const u_char			*next_optr;
+		struct ether_header	*ethh;
+		struct const_packet nold;
+		struct packet 		nnew;
 
 		/*Safety checks*/
-		if(!h || !nptr || !nlength || !optr || !length || !*nptr || !*optr){
+		if(!new || !old || !new->data || !old->data || !new->h || !old->h){
 			dbgprintf(0,"Error: Ethernet Encapsulation Function given bad data!\n");
 			return 0;
 		}
-		if(*length < sizeof(struct ether_header) || *nlength < sizeof(struct ether_header)){
+		if(old->length < sizeof(struct ether_header) || new->length < sizeof(struct ether_header)){
 			dbgprintf(0, "Error: Ethernet Encapsulation Function given packet of wrong size!\n");
 			return 0;
 		}
 
 		/*Copy Ethernet header over*/
-		memcpy(*nptr, *optr, sizeof(struct ether_header));
+		memcpy(new->data, old->data, sizeof(struct ether_header));
 
 		/*Cast Pointer*/
-		ethh=(struct ether_header*)(*nptr);
+		ethh=(struct ether_header*)(new->data);
 
 		/*Adjust pointers and lengths*/
-		next_optr= *optr+ sizeof(struct ether_header);
-		next_nptr= *nptr+ sizeof(struct ether_header);
-		next_len= *length- sizeof(struct ether_header);
-		next_nlen= *nlength- sizeof(struct ether_header);
+		nold.data= old->data+ sizeof(struct ether_header);
+		nnew.data= new->data + sizeof(struct ether_header);
+		nold.length= old->length - sizeof(struct ether_header);
+		nnew.length= new->length - sizeof(struct ether_header);
 
 		/*Select Next Protocol*/
 		switch(ntohs(ethh->ether_type)){
 			case ETHERTYPE_IP:
-					if(!ipv4_encap(h, &next_nptr, &next_nlen, &next_optr, &next_len)){
+					if(!ipv4_encap(&nnew, &nold)){
 							return 0;
 					}
 					break;
@@ -91,40 +89,38 @@ int ethernet_encap(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 		}
 
 		/*Adjust length*/
-		*nlength=next_nlen + sizeof(struct ether_header);
+		new->length=nnew.length + sizeof(struct ether_header);
 return 1;
 }
 
 /*IPv4 Encapsulation*/
-int ipv4_encap(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length)
+int ipv4_encap(struct packet *new, const struct const_packet *old)
 {
-		struct iphdr 			*iph;
-		int						next_len;
-		int						next_nlen;
-		u_char					*next_nptr;
-		const u_char			*next_optr;
+		struct iphdr 		*iph;
+		struct packet		nnew;
+		struct const_packet	nold;
 
 		/*Safety checks*/
-		if(!h || !nptr || !nlength || !optr || !length || !*nptr || !*optr){
+		if(!new || !old || !new->data || !old->data || !new->h || !old->h){
 			dbgprintf(0,"Error: IPv4 Encapsulation Function given bad data!\n");
 			return 0;
 		}
-		if(*length < sizeof(struct iphdr) || *nlength < sizeof(struct iphdr)){
+		if(old->length < sizeof(struct iphdr) || new->length < sizeof(struct iphdr)){
 			dbgprintf(0, "Error: IPv4 Encapsulation Function given packet of wrong size!\n");
 			return 0;
 		}
 
 		/*Copy IPv4 header over*/
-		memcpy(*nptr, *optr, sizeof(struct iphdr));
+		memcpy(new->data, old->data, sizeof(struct iphdr));
 
 		/*Cast Pointer*/
-		iph=(struct iphdr*)(*nptr);
+		iph=(struct iphdr*)(new->data);
 
 		/*Adjust pointers and lengths*/
-		next_optr= *optr +iph->ihl*4;
-		next_nptr= *nptr +iph->ihl*4;
-		next_len= *length -iph->ihl*4;
-		next_nlen= *nlength-iph->ihl*4;
+		nold.data= old->data +iph->ihl*4;
+		nnew.data= new->data +iph->ihl*4;
+		nold.length= old->length -iph->ihl*4;
+		nnew.length= new->length -iph->ihl*4;
 
 		/*Confirm that this is IPv4*/
 		if(iph->version!=4){
@@ -136,7 +132,9 @@ int ipv4_encap(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char 
 		switch(iph->protocol){
 			case 0x21:
 					/*DCCP*/
-					if(!convert_packet(h, &next_nptr, &next_nlen, &next_optr, &next_len)){
+					nnew.src_id=iph->saddr;
+					nnew.dest_id=iph->daddr;
+					if(!convert_packet(&nnew, &nold)){
 						return 0;
 					}
 					break;
@@ -151,49 +149,47 @@ int ipv4_encap(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char 
 		iph->check=htonl(0);
 
 		/*Adjust length*/
-		*nlength=next_nlen + iph->ihl*4;
+		new->length=nnew.length + iph->ihl*4;
 
 		/*Determine if computed length is reasonable*/
-		if(*nlength > 0xFFFF){
+		if(nnew.length > 0xFFFF){
 				dbgprintf(1, "Error: Given TCP header+data length is too large for an IPv4 packet!\n");
 				return 0;
 		}
 
 		/*Adjust IPv4 header to account for packet's total length*/
-		iph->tot_len=htons(*nlength);
+		iph->tot_len=htons(nnew.length);
 return 1;
 }
 
-int linux_cooked_encap(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length)
+int linux_cooked_encap(struct packet *new, const struct const_packet *old)
 {
-	struct sll_header	*slh;
-	int					next_len;
-	int					next_nlen;
-	u_char				*next_nptr;
-	const u_char		*next_optr;
+	struct sll_header		*slh;
+	struct packet			nnew;
+	struct const_packet		nold;
 
 
 	/*Safety checks*/
-	if(!h || !nptr || !nlength || !optr || !length || !*nptr || !*optr){
+	if(!new|| !old || !new->data || !old->data || !new->h || !old->h){
 		dbgprintf(0,"Error: SLL Encapsulation Function given bad data!\n");
 		return 0;
 	}
-	if(*length < sizeof(struct sll_header) || *nlength < sizeof(struct sll_header)){
+	if(old->length < sizeof(struct sll_header) || new->length < sizeof(struct sll_header)){
 		dbgprintf(0, "Error: SLL Encapsulation Function given packet of wrong size!\n");
 		return 0;
 	}
 
 	/*Copy SLL header over*/
-	memcpy(*nptr, *optr, sizeof(struct sll_header));
+	memcpy(new->data, old->data, sizeof(struct sll_header));
 
 	/*Cast Pointer*/
-	slh=(struct sll_header*)(*nptr);
+	slh=(struct sll_header*)(new->data);
 
 	/*Adjust pointers and lengths*/
-	next_optr= *optr + sizeof(struct sll_header);
-	next_nptr= *nptr + sizeof(struct sll_header);
-	next_len= *length - sizeof(struct sll_header);
-	next_nlen= *nlength- sizeof(struct sll_header);
+	nold.data= old->data + sizeof(struct sll_header);
+	nnew.data= new->data + sizeof(struct sll_header);
+	nold.length= old->length - sizeof(struct sll_header);
+	nnew.length= new->length- sizeof(struct sll_header);
 
 	/*Confirm that this is SLL*/
 	if(ntohs(slh->sll_pkttype) > 4){
@@ -204,7 +200,7 @@ int linux_cooked_encap(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const
 	/*Select Next Protocol*/
 	switch(ntohs(slh->sll_protocol)){
 		case ETHERTYPE_IP:
-				if(!ipv4_encap(h, &next_nptr, &next_nlen, &next_optr, &next_len)){
+				if(!ipv4_encap(&nnew, &nold)){
 						return 0;
 				}
 				break;
@@ -215,6 +211,6 @@ int linux_cooked_encap(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const
 	}
 
 	/*Adjust length*/
-	*nlength=next_nlen + sizeof(struct sll_header);
+	new->length=nnew.length + sizeof(struct sll_header);
 return 1;
 }

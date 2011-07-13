@@ -1,7 +1,7 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 5/2011
+Date: 7/2011
 
 Description: Header file for Encapsulation Functions for DCCP to TCP conversion
 
@@ -11,38 +11,52 @@ Description: Header file for Encapsulation Functions for DCCP to TCP conversion
 
 /*
  * All Conversion functions use these standard arguments:
- *  struct pcap_pkthdr *h: This is a copy of the libpcap packet structure.
- * 						   You are free to modify and use the fields.
+ * struct packet *new:		The New packet. It contains the following fields.
  *
- *  u_char **nptr:		This is a pointer to a buffer for the new packet.
- * 						Each encapsulation has the responsibility to call
- * 						When a function is called, this will point at the
- * 						location for that protocol's header to start.
+ *  	struct pcap_pkthdr *h: This is a copy of the libpcap packet structure.
+ * 							   You are free to modify and use the fields.
  *
- *  int *nlength:		The length of the new packet. Each encapsulation
- *  					can rely on this to contain the remaining buffer
- *  					space AND must return with this parameter containing
- *  					the length of the new packet at that layer.
+ *  	u_char *data:		This is a pointer to a buffer for the new packet.
+ * 							Each encapsulation has the responsibility to call
+ * 							When a function is called, this will point at the
+ * 							location for that protocol's header to start.
  *
- *  u_char** optr:		This is a pointer to the buffer containing the
- *  					old packet. When a functio is called, this will
- *  					point at the location of that protocol's header.
+ *  	int length:			The length of the new packet. Each encapsulation
+ *  						can rely on this to contain the remaining buffer
+ *  						space AND must return with this parameter containing
+ *  						the length of the new packet at that layer.
  *
- *  int* length:		The length of the old packet. Each encapsulation
- *  					layer MUST decrement this by the amount of it's
- *  					headers. An encapsulation layer MUST never read
- *  					beyond this into optr.
+ *  	uint32_t src_id:	This is an ID for the source host. If you are going to
+ *  						demultiplex DCCP on anything but Port Numbers, you
+ *  						need to set this field. Typically this would be an
+ *  						IP address.
+ *
+ *  	uint32_t dest_id: 	This is an ID for the destination host. If you are going to
+ *  						demultiplex DCCP on anything but Port Numbers, you
+ *  						need to set this field. Typically this would be an
+ *  						IP address.
+ *
+ *	struct const_packet *old:	The Old packet. It contains the following fields.
+ *
+ *  	u_char* data:		This is a pointer to the buffer containing the
+ *  						old packet. When a function is called, this will
+ *  						point at the location of that protocol's header.
+ *
+ *  	int length:			The length of the old packet. Each encapsulation
+ *  						layer MUST decrement this by the amount of it's
+ *  						headers. An encapsulation layer MUST never read
+ *  						beyond this into old->data.
  */
 
 /*
  * Last Level Conversion Function
  * Converts DCCP to TCP for analysis by TCPTRACE
  */
-int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length);
+int convert_packet(struct packet *new, const struct const_packet *old);
 
 /*Standard Encapsulation Functions*/
-int ethernet_encap(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length);
-int linux_cooked_encap(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length);
-int ipv4_encap(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length);
+int ethernet_encap(struct packet *new, const struct const_packet *old);
+int linux_cooked_encap(struct packet *new, const struct const_packet *old);
+int ipv4_encap(struct packet *new, const struct const_packet *old);
 
 #endif /* ENCAP_H_ */

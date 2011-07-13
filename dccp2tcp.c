@@ -1,19 +1,18 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 5/2011
+Date: 7/2011
 
 Description: Program to convert a DCCP flow to a TCP flow for DCCP analysis via
 		tcptrace.
 
 Notes:
-	1)Supports only a single DCCP contection per capture
-	2)Source Port!=Destination Port
-	3)DCCP MUST use 48 bit sequence numbers
-	4)Checksums are not computed (they are zeroed)
-	5)Only implements those packet types normally used in a session
-	6)DCCP Ack packets show up as TCP packets containing one byte
-	7)Very little error checking of packet headers
+	1)CCID2 ONLY
+	2)DCCP MUST use 48 bit sequence numbers
+	3)Checksums are not computed (they are zeroed)
+	4)Only implements those packet types normally used in a session
+	5)DCCP Ack packets show up as TCP packets containing one byte
+	6)Very little error checking of packet headers
 ******************************************************************************/
 #include "dccp2tcp.h"
 
@@ -24,22 +23,21 @@ int green=0;	/*tcptrace green line as currently acked packet*/
 int sack=0;		/*add TCP SACKS*/
 
 pcap_t*			in;			/*libpcap input file discriptor*/
-pcap_dumper_t	*out;	/*libpcap output file discriptor*/
-struct seq_num	*s1;	/*sequence number structure for side one of connection*/
-struct seq_num	*s2;	/*sequence number structure for side two of connection*/
+pcap_dumper_t	*out;		/*libpcap output file discriptor*/
+struct connection *chead;	/*connection list*/
 
 
 
 void PcapSavePacket(struct pcap_pkthdr *h, u_char *data);
 void process_packets();
 void handle_packet(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes);
-int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length);
+int convert_packet(struct packet *new, const struct const_packet* old);
 unsigned int interp_ack_vect(u_char* hdr);
-u_int32_t initialize_seq(struct seq_num **seq, __be16 source, __be32 initial);
-u_int32_t add_new_seq(struct seq_num *seq, __be32 num, int size, enum dccp_pkt_type type);
-u_int32_t convert_ack(struct seq_num *seq, __be32 num);
-int acked_packet_size(struct seq_num *seq, __be32 num);
-void ack_vect2sack(struct seq_num *seq, struct tcphdr *tcph, u_char* tcpopts, u_char* dccphdr, __be32 dccpack);
+u_int32_t initialize_seq(struct host *seq, __be16 source, __be32 initial);
+u_int32_t add_new_seq(struct host *seq, __be32 num, int size, enum dccp_pkt_type type);
+u_int32_t convert_ack(struct host *seq, __be32 num);
+int acked_packet_size(struct host *seq, __be32 num);
+void ack_vect2sack(struct host *seq, struct tcphdr *tcph, u_char* tcpopts, u_char* dccphdr, __be32 dccpack);
 
 
 /*Parse commandline options and open files*/
@@ -140,32 +138,36 @@ return 0;
 void handle_packet(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
 {
 	u_char 				*ndata;
-	u_char 				*nptr;
-	int					length;
-	int					nlength;
 	struct pcap_pkthdr 	nh;
 	int					link_type;
+	struct packet		new;
+	struct const_packet	old;
 
 	/*Determine the link type for this packet*/
 	link_type=pcap_datalink(in);
 
 	/*create new libpcap header*/
 	memcpy(&nh, h, sizeof(struct pcap_pkthdr));
-	length=h->caplen;
-	nlength=MAX_PACKET;
+
+	/*Setup packet structs*/
+	old.h=h;
+	old.length=h->caplen;
+	old.data=bytes;
+	new.h=&nh;
+	new.length=MAX_PACKET;
 
 	/*create buffer for new packet*/
-	nptr=ndata=malloc(MAX_PACKET);
+	new.data=ndata=malloc(MAX_PACKET);
 	if(ndata==NULL){
 		dbgprintf(0,"Error: Couldn't allocate Memory\n");
 		exit(1);
 	}
 
 	/*make sure the packet is all zero*/
-	memset(nptr, 0, MAX_PACKET);
+	memset(new.data, 0, MAX_PACKET);
 	
 	/*do all the fancy conversions*/
-	if(!do_encap(link_type, &nh, &nptr, &nlength, &bytes, &length)){
+	if(!do_encap(link_type, &new, &old)){
 		free(ndata);
 		return;
 	}
@@ -179,34 +181,54 @@ return;
 
 
 /*do all the dccp to tcp conversions*/
-int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length)
+int convert_packet(struct packet *new, const struct const_packet* old)
 {	
-	u_char* ncur=*nptr;
-	const u_char* ocur=*optr;
-	struct tcphdr *tcph;
-	struct dccp_hdr *dccph;
-	struct dccp_hdr_ext *dccphex;
-	struct dccp_hdr_ack_bits *dccphack;
-	int datalength;
-	int	len=0;
-	const u_char* pd;
-	u_char* npd;
-	u_char* tcpopt;
+	struct tcphdr 				*tcph;
+	struct dccp_hdr 			*dccph;
+	struct dccp_hdr_ext 		*dccphex;
+	struct dccp_hdr_ack_bits 	*dccphack;
+	struct host					*h1=NULL;
+	struct host					*h2=NULL;
+	int 						datalength;
+	int							len=0;
+	const u_char* 				pd;
+	u_char* 					npd;
+	u_char* 					tcpopt;
+
+	/*Safety checks*/
+	if(!new || !old || !new->data || !old->data || !new->h || !old->h){
+		dbgprintf(0,"Error:  Convert Packet Function given bad data!\n");
+		return 0;
+	}
+	if(old->length < sizeof(struct dccp_hdr) || new->length < sizeof(struct dccp_hdr)){
+		dbgprintf(0, "Error: Convert Packet Function given packet of wrong size!\n");
+		return 0;
+	}
 
 	/*cast header pointers*/
-	tcph=(struct tcphdr*)ncur;
-	tcpopt=ncur+ sizeof(struct tcphdr);
-	dccph=(struct dccp_hdr*)ocur;
-	dccphex=(struct dccp_hdr_ext*)(ocur+sizeof(struct dccp_hdr));
-	dccphack=(struct dccp_hdr_ack_bits*)(ocur+ sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext));
+	tcph=(struct tcphdr*)new->data;
+	tcpopt=new->data + sizeof(struct tcphdr);
+	dccph=(struct dccp_hdr*)old->data;
+	dccphex=(struct dccp_hdr_ext*)(old->data+sizeof(struct dccp_hdr));
+	dccphack=(struct dccp_hdr_ack_bits*)(old->data+ sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext));
 
 	dbgprintf(2,"Sequence Number: %llu\n", (unsigned long long)(((unsigned long)ntohs(dccph->dccph_seq)<<32) + ntohl(dccphex->dccph_seq_low)));
 
-	/*determine data length*/
-	datalength=*length - dccph->dccph_doff*4;
-	pd=*optr + dccph->dccph_doff*4;
+	/*Get Hosts*/
+	if(get_host(new->src_id, new->dest_id, dccph->dccph_sport, dccph->dccph_dport, h1, h2)){
+		dbgprintf(0,"Error: Can't Get Hosts!\n");
+		return 0;
+	}
+	if(!h1 || !h2){
+		dbgprintf(0, "Error: Can't Get Hosts!\n");
+		return 0;
+	}
 
-	/*set tcp standard features*/
+	/*determine data length*/
+	datalength=old->length - dccph->dccph_doff*4;
+	pd=old->data + dccph->dccph_doff*4;
+
+	/*set TCP standard features*/
 	tcph->source=dccph->dccph_sport;
 	tcph->dest=dccph->dccph_dport;
 	tcph->doff=5;
@@ -218,20 +240,15 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 		tcph->window=htons(30000);
 	}
 
-	/*Only accept the first connection*/
-	if(s1 && s2 && dccph->dccph_sport!=s1->addr && dccph->dccph_dport!=s1->addr){
-		return 0;
-	}
-
 	/*make changes by packet type*/
 	if(dccph->dccph_type==DCCP_PKT_REQUEST){//DCCP REQUEST -->TCP SYN
 		dbgprintf(2,"Packet Type: Request\n");
-		if(!s1){
+		if(h1->state==INIT){
 			if(yellow){
 				tcph->window=htons(0);
 			}
 			tcph->ack_seq=htonl(0);
-			tcph->seq=htonl(initialize_seq(&s1, dccph->dccph_sport, ntohl(dccphex->dccph_seq_low)));
+			tcph->seq=htonl(initialize_seq(h1, dccph->dccph_sport, ntohl(dccphex->dccph_seq_low)));
 			tcph->syn=1;
 			tcph->ack=0;
 			tcph->fin=0;
@@ -252,12 +269,12 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 
 	if(dccph->dccph_type==DCCP_PKT_RESPONSE){//DCCP RESPONSE-->TCP SYN,ACK
 		dbgprintf(2,"Packet Type: Response\n");
-		if(s1 && !s2){
-			tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
+		if(h2->state==OPEN && h1->state==INIT){
+			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)));
 			if(yellow){
 				tcph->window=htons(0);
 			}
-			tcph->seq=htonl(initialize_seq(&s2, dccph->dccph_sport, ntohl(dccphex->dccph_seq_low)));
+			tcph->seq=htonl(initialize_seq(h1, dccph->dccph_sport, ntohl(dccphex->dccph_seq_low)));
 			tcph->syn=1;
 			tcph->ack=1;
 			tcph->fin=0;
@@ -282,36 +299,18 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 
 	if(dccph->dccph_type==DCCP_PKT_DATAACK){//DCCP DATAACK-->TCP ACK with data
 		dbgprintf(2,"Packet Type: DataAck\n");
-		if(s1 && s2 && dccph->dccph_sport==s1->addr){ //determine which side of connection is sending this packet
-			if(green){
-				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-			}
-			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),datalength, dccph->dccph_type));
-			if(yellow){
-				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s2, ntohl(dccphack->dccph_ack_nr_low)));
-			}
-			if(sack){
-				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-					ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-				}
-			}
-		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
-			if(green){
-				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-			}
-			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),datalength,dccph->dccph_type));
-			if(yellow){
-				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s1, ntohl(dccphack->dccph_ack_nr_low)));
-			}
-			if(sack){
-				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-					ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-
-				}
+		if(green){
+			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)));
+		}else{
+			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
+		}
+		tcph->seq=htonl(add_new_seq(h1, ntohl(dccphex->dccph_seq_low),datalength, dccph->dccph_type));
+		if(yellow){
+			tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(h2, ntohl(dccphack->dccph_ack_nr_low)));
+		}
+		if(sack){
+			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+				ack_vect2sack(h2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
 		}
 
@@ -321,7 +320,7 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 		tcph->rst=0;
 
 		/*copy data*/
-		npd=*nptr + tcph->doff*4;
+		npd=new->data + tcph->doff*4;
 		memcpy(npd, pd, datalength);
 
 		/*calculate length*/
@@ -330,41 +329,21 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 
 	if(dccph->dccph_type==DCCP_PKT_ACK){ //DCCP ACK -->TCP ACK with no data
 		dbgprintf(2,"Packet Type: Ack\n");
-		if(s1 && s2 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
-			if(green){
-				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
+		if(green){
+			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)));
+		}else{
+			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
+		}
+		tcph->seq=htonl(add_new_seq(h1, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
+		if(yellow){
+			tcph->window=htons(-interp_ack_vect((u_char*)dccph)*1400);
+			if(-interp_ack_vect((u_char*)dccph)*1400 > 65535){
+				printf("Note: TCP Window Overflow @ %d.%d\n", (int)old->h->ts.tv_sec, (int)old->h->ts.tv_usec);
 			}
-			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
-			if(yellow){
-				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*1400);
-				if(-interp_ack_vect((u_char*)dccph)*1400 > 65535){
-					printf("Note: TCP Window Overflow @ %d.%d\n", (int)h->ts.tv_sec, (int)h->ts.tv_usec);
-				}
-			}
-			if(sack){
-				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-					ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-				}
-			}
-		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
-			if(green){
-				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-			}
-			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
-			if(yellow){
-				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*1400);
-				if(-interp_ack_vect((u_char*)dccph)*1400 > 65535){
-					printf("Note: TCP Window Overflow @ %d.%d\n", (int)h->ts.tv_sec, (int)h->ts.tv_usec);
-				}
-			}
-			if(sack){
-				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-					ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-				}
+		}
+		if(sack){
+			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+				ack_vect2sack(h2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
 		}
 
@@ -384,35 +363,19 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 
 	if(dccph->dccph_type==DCCP_PKT_CLOSE){//DCCP CLOSE-->TCP FIN,ACK
 		dbgprintf(2,"Packet Type: Close\n");
-		if(s1 && s2 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
-			if(green){
-				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-			}
-			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
-			if(yellow){
-				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s2, ntohl(dccphack->dccph_ack_nr_low)));
-			}
-			if(sack){
-				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-					ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-				}
-			}
-		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
-			if(green){
-				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-			}
-			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
-			if(yellow){
-				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s1, ntohl(dccphack->dccph_ack_nr_low)));
-			}
-			if(sack){
-				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-					ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-				}
+		update_state(h1,CLOSE);
+		if(green){
+			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)));
+		}else{
+			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
+		}
+		tcph->seq=htonl(add_new_seq(h1, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
+		if(yellow){
+			tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(h2, ntohl(dccphack->dccph_ack_nr_low)));
+		}
+		if(sack){
+			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+				ack_vect2sack(h2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
 		}
 
@@ -426,36 +389,22 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 	}
 
 	if(dccph->dccph_type==DCCP_PKT_RESET){//DCCP RESET-->TCP FIN,ACK (only seen at end of connection as CLOSE ACK)
+		if(h2->state==CLOSE){
+			update_state(h1,CLOSE);
+		}
 		dbgprintf(2,"Packet Type: Reset\n");
-		if(s1 && s2 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
-			if(green){
-				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-			}
-			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
-			if(yellow){
-				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s2, ntohl(dccphack->dccph_ack_nr_low)));
-			}
-			if(sack){
-				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-					ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-				}
-			}
-		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
-			if(green){
-				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-			}
-			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
-			if(yellow){
-				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s1, ntohl(dccphack->dccph_ack_nr_low)));
-			}
-			if(sack){
-				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-					ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-				}
+		if(green){
+			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)));
+		}else{
+			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
+		}
+		tcph->seq=htonl(add_new_seq(h1, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
+		if(yellow){
+			tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(h2, ntohl(dccphack->dccph_ack_nr_low)));
+		}
+		if(sack){
+			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+				ack_vect2sack(h2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
 		}
 
@@ -470,39 +419,20 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 
 	if(dccph->dccph_type==DCCP_PKT_SYNC){//DCCP SYNC
 		dbgprintf(2,"Packet Type: Sync\n");
-		if(s1 && s2 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
-			if(green){
-				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-			}
-			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),0,dccph->dccph_type));
-			if(yellow){
-				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s2, ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->window=htons(0);
-			}
-			if(sack){
-				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-					ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-				}
-			}
-		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
-			if(green){
-				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-			}
-			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),0,dccph->dccph_type));
-			if(yellow){
-				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s1, ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->window=htons(0);
-			}
-			if(sack){
-				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-					ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-				}
+		if(green){
+			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)));
+		}else{
+			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
+		}
+		tcph->seq=htonl(add_new_seq(h1, ntohl(dccphex->dccph_seq_low),0,dccph->dccph_type));
+		if(yellow){
+			tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(h2, ntohl(dccphack->dccph_ack_nr_low)));
+		}else{
+			tcph->window=htons(0);
+		}
+		if(sack){
+			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+				ack_vect2sack(h2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
 		}
 
@@ -517,39 +447,20 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 
 	if(dccph->dccph_type==DCCP_PKT_SYNCACK){//DCCP SYNACK
 		dbgprintf(2,"Packet Type: SyncAck\n");
-		if(s1 && s2 && dccph->dccph_sport==s1->addr){//determine which side of connection is sending this packet
-			if(green){
-				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->ack_seq=htonl(convert_ack(s2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-			}
-			tcph->seq=htonl(add_new_seq(s1, ntohl(dccphex->dccph_seq_low),0,dccph->dccph_type));
-			if(yellow){
-				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s2, ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->window=htons(0);
-			}
-			if(sack){
-				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-					ack_vect2sack(s2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low));
-				}
-			}
-		}else if(s1 && s2 && dccph->dccph_sport==s2->addr){
-			if(green){
-				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->ack_seq=htonl(convert_ack(s1,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-			}
-			tcph->seq=htonl(add_new_seq(s2, ntohl(dccphex->dccph_seq_low),0,dccph->dccph_type));
-			if(yellow){
-				tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(s1, ntohl(dccphack->dccph_ack_nr_low)));
-			}else{
-				tcph->window=htons(0);
-			}
-			if(sack){
-				if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-					ack_vect2sack(s1, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-				}
+		if(green){
+			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)));
+		}else{
+			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
+		}
+		tcph->seq=htonl(add_new_seq(h1, ntohl(dccphex->dccph_seq_low),0,dccph->dccph_type));
+		if(yellow){
+			tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(h2, ntohl(dccphack->dccph_ack_nr_low)));
+		}else{
+			tcph->window=htons(0);
+		}
+		if(sack){
+			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
+				ack_vect2sack(h2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low));
 			}
 		}
 
@@ -567,7 +478,7 @@ int convert_packet(struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_c
 		return 0;
 	}
 
-	*nlength=len;
+	new->length=len;
 return 1;
 }
 
@@ -639,38 +550,31 @@ return additional;
 
 
 /* Setup Sequence Number Structure*/
-u_int32_t initialize_seq(struct seq_num **seq, __be16 source, __be32 initial)
+u_int32_t initialize_seq(struct host *seq, __be16 source, __be32 initial)
 {
-	/*allocate structure*/
-	*seq=(struct seq_num*)malloc(sizeof(struct seq_num));
-	if(*seq==NULL){
-		dbgprintf(0,"Can't Allocate Memory!\n");
-		exit(1);
-	}
-
 	/*set default values*/
-	(*seq)->cur=0;
-	(*seq)->addr=source;
-	(*seq)->size=TBL_SZ;
+	seq->cur=0;
+	seq->size=TBL_SZ;
 	
 	/*allocate table*/
-	(*seq)->table=(struct tbl*)malloc(sizeof(struct tbl)*TBL_SZ);
-	if((*seq)->table==NULL){
+	seq->table=(struct tbl*)malloc(sizeof(struct tbl)*TBL_SZ);
+	if(seq->table==NULL){
 		dbgprintf(0,"Can't Allocate Memory!\n");
 		exit(1);
 	}
 
 	/*add first sequence number*/
-	(*seq)->table[0].old=initial;
-	(*seq)->table[0].new=initial;
-	(*seq)->table[0].type=DCCP_PKT_REQUEST;
-	(*seq)->table[0].size=0;
+	seq->table[0].old=initial;
+	seq->table[0].new=initial;
+	seq->table[0].type=DCCP_PKT_REQUEST;
+	seq->table[0].size=0;
+	update_state(seq,OPEN);
 return initial;
 }
 
 
 /*Convert Sequence Numbers*/
-u_int32_t add_new_seq(struct seq_num *seq, __be32 num, int size, enum dccp_pkt_type type)
+u_int32_t add_new_seq(struct host *seq, __be32 num, int size, enum dccp_pkt_type type)
 {
 	int prev;
 	if(seq==NULL){
@@ -713,7 +617,7 @@ return seq->table[seq->cur].new +1;
 
 
 /*Convert Ack Numbers*/
-u_int32_t convert_ack(struct seq_num *seq, __be32 num)
+u_int32_t convert_ack(struct host *seq, __be32 num)
 {
 	if(seq==NULL){
 		dbgprintf(0,"ERROR NULL POINTER!\n");
@@ -733,7 +637,7 @@ return 0;
 
 
 /* Get size of packet being acked*/
-int acked_packet_size(struct seq_num *seq, __be32 num)
+int acked_packet_size(struct host *seq, __be32 num)
 {
 	if(seq==NULL){
 		dbgprintf(0,"ERROR NULL POINTER!\n");
@@ -753,7 +657,7 @@ return 0;
 
 
 /*Ack Vector to SACK Option*/
-void ack_vect2sack(struct seq_num *seq, struct tcphdr *tcph, u_char* tcpopts, u_char* dccphdr, __be32 dccpack)
+void ack_vect2sack(struct host *seq, struct tcphdr *tcph, u_char* tcpopts, u_char* dccphdr, __be32 dccpack)
 {
 	int hdrlen=((struct dccp_hdr*)dccphdr)->dccph_doff*4;
 	int optlen;

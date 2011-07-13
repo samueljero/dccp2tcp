@@ -1,19 +1,18 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 5/2011
+Date: 7/2011
 
 Description: Header file for program to convert a DCCP flow to a TCP flow for DCCP
  	 	 analysis via tcptrace.
 
 Notes:
-	1)Supports only a single DCCP connection per capture
-	2)Source Port!=Destination Port
-	3)DCCP MUST use 48 bit sequence numbers
-	4)Checksums are not computed (they are zeroed)
-	5)Only implements those packet types normally used in a session
-	6)DCCP Ack packets show up as TCP packets containing one byte
-	7)Very little error checking of packet headers
+	1)CCID2 ONLY
+	2)DCCP MUST use 48 bit sequence numbers
+	3)Checksums are not computed (they are zeroed)
+	4)Only implements those packet types normally used in a session
+	5)DCCP Ack packets show up as TCP packets containing one byte
+	6)Very little error checking of packet headers
 ******************************************************************************/
 #ifndef _DCCP2TCP_H
 #define _DCCP2TCP_H
@@ -48,12 +47,47 @@ Notes:
 
 
 
-/*sequence number structure--one per side of the connection */
-struct seq_num{
-	int cur;			/*current sequence number */
-	__be16 addr;		/*connection half id---source port */
-	struct tbl *table;	/*sequence number table */
-	int size;			/*sequence number table size */
+
+/*Packet structure*/
+struct packet{
+	struct pcap_pkthdr	*h;		/*libpcap header*/
+	u_char				*data;	/*Packet Data*/
+	int					length;	/*Packet length*/
+	uint32_t			src_id; /*Source ID of packet*/
+	uint32_t			dest_id; /*Destination ID of packet*/
+};
+
+/*Constant Packet structure*/
+struct const_packet{
+	const struct pcap_pkthdr *h;	/*libpcap header*/
+	const u_char			*data;	/*Packet Data*/
+	int						length;	/*Packet length*/
+	uint32_t				src_id; /*Source ID of packet*/
+	uint32_t				dest_id;/*Destination ID of packet*/
+};
+
+/*Connection states*/
+enum con_state{
+	INIT,
+	OPEN,
+	CLOSE,
+};
+
+/*Host---half of a connection*/
+struct host{
+	uint32_t 			id;		/*Host ID*/
+	__be16				port;	/*Host DCCP port*/
+	struct tbl			*table;	/*Host Sequence Number Table*/
+	int					size;	/*Size of Sequence Number Table*/
+	int					cur;	/*Current TCP Sequence Number*/
+	enum con_state		state;	/*Connection state*/
+};
+
+/*Connection structure*/
+struct connection{
+	struct connection	*next;	/*List pointer*/
+	struct host			A;		/*Host A*/
+	struct host			B;		/*Host B*/
 };
 
 /*sequence number table structure */
@@ -70,9 +104,7 @@ extern int yellow;		/*tcptrace yellow line as currently acked packet*/
 extern int green;		/*tcptrace green line as currently acked packet*/
 extern int sack;		/*add TCP SACKS*/
 
-/*Half Connection Structures*/
-extern struct seq_num	*s1;	/*sequence number structure for side one of connection*/
-extern struct seq_num	*s2;	/*sequence number structure for side two of connection*/
+extern struct connection *chead;/*connection list*/
 
 
 /*debug printf
@@ -84,6 +116,11 @@ extern struct seq_num	*s2;	/*sequence number structure for side two of connectio
 void dbgprintf(int level, const char *fmt, ...);
 
 /*Function to parse encapsulation*/
-int do_encap(int link, struct pcap_pkthdr *h, u_char **nptr, int *nlength, const u_char **optr, int *length);
+int do_encap(int link, struct packet *new, const struct const_packet *old);
+
+/*Connection functions*/
+int get_host(uint32_t src_id, uint32_t dest_id, int src_port, int dest_port, struct host *fwd, struct host *rev);
+struct connection *add_connection(uint32_t src_id, uint32_t dest_id, int src_port, int dest_port);
+int update_state(struct host* hst, enum con_state st);
 
 #endif
