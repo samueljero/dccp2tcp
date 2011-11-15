@@ -124,6 +124,7 @@ int main(int argc, char *argv[])
 	}
 
 	/*process packets*/
+	chead=NULL;
 	u_char *user=(u_char*)out;
 	pcap_loop(in, -1, handle_packet, user);	
 	
@@ -198,6 +199,7 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 	/*Safety checks*/
 	if(!new || !old || !new->data || !old->data || !new->h || !old->h){
 		dbgprintf(0,"Error:  Convert Packet Function given bad data!\n");
+		exit(1);
 		return 0;
 	}
 	if(old->length < sizeof(struct dccp_hdr) || new->length < sizeof(struct dccp_hdr)){
@@ -215,11 +217,11 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 	dbgprintf(2,"Sequence Number: %llu\n", (unsigned long long)(((unsigned long)ntohs(dccph->dccph_seq)<<32) + ntohl(dccphex->dccph_seq_low)));
 
 	/*Get Hosts*/
-	if(get_host(new->src_id, new->dest_id, dccph->dccph_sport, dccph->dccph_dport, h1, h2)){
+	if(get_host(new->src_id, new->dest_id, dccph->dccph_sport, dccph->dccph_dport, &h1, &h2)){
 		dbgprintf(0,"Error: Can't Get Hosts!\n");
 		return 0;
 	}
-	if(!h1 || !h2){
+	if(h1==NULL || h2==NULL){
 		dbgprintf(0, "Error: Can't Get Hosts!\n");
 		return 0;
 	}
@@ -582,6 +584,11 @@ u_int32_t add_new_seq(struct host *seq, __be32 num, int size, enum dccp_pkt_type
 		exit(1);
 	}
 	
+	if(seq->table==NULL){
+		dbgprintf(1, "Warning: Connection initialization incorrect\n");
+		return 0;
+	}
+
 	/*account for missing packets*/
 	while(seq->table[seq->cur].old +1 < num && seq->table[seq->cur].old +1 > 0){
 		prev=seq->cur;

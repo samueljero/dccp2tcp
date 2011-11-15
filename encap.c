@@ -78,6 +78,8 @@ int ethernet_encap(struct packet *new, const struct const_packet *old)
 		/*Select Next Protocol*/
 		switch(ntohs(ethh->ether_type)){
 			case ETHERTYPE_IP:
+					nnew.h=new->h;
+					nold.h=old->h;
 					if(!ipv4_encap(&nnew, &nold)){
 							return 0;
 					}
@@ -132,6 +134,8 @@ int ipv4_encap(struct packet *new, const struct const_packet *old)
 		switch(iph->protocol){
 			case 0x21:
 					/*DCCP*/
+					nnew.h=new->h;
+					nold.h=old->h;
 					nnew.src_id=iph->saddr;
 					nnew.dest_id=iph->daddr;
 					if(!convert_packet(&nnew, &nold)){
@@ -200,6 +204,8 @@ int linux_cooked_encap(struct packet *new, const struct const_packet *old)
 	/*Select Next Protocol*/
 	switch(ntohs(slh->sll_protocol)){
 		case ETHERTYPE_IP:
+				nnew.h=new->h;
+				nold.h=old->h;
 				if(!ipv4_encap(&nnew, &nold)){
 						return 0;
 				}
