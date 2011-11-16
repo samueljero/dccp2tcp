@@ -585,8 +585,8 @@ u_int32_t add_new_seq(struct host *seq, __be32 num, int size, enum dccp_pkt_type
 	}
 	
 	if(seq->table==NULL){
-		dbgprintf(1, "Warning: Connection initialization incorrect\n");
-		return 0;
+		dbgprintf(1, "Warning: Connection uninitialized\n");
+		return initialize_seq(seq, 0, num);
 	}
 
 	/*account for missing packets*/
@@ -631,6 +631,11 @@ u_int32_t convert_ack(struct host *seq, __be32 num)
 		exit(1);
 	}
 
+	if(seq->table==NULL){
+		dbgprintf(1, "Warning: Connection uninitialized\n");
+		initialize_seq(seq, 0, num);
+	}
+
 	/*loop through table looking for the DCCP ack number*/
 	for(int i=0; i < seq->size; i++){
 		if(seq->table[i].old==num){
@@ -649,6 +654,11 @@ int acked_packet_size(struct host *seq, __be32 num)
 	if(seq==NULL){
 		dbgprintf(0,"ERROR NULL POINTER!\n");
 		exit(1);
+	}
+
+	if(seq->table==NULL){
+		dbgprintf(1, "Warning: Connection uninitialized\n");
+		initialize_seq(seq, 0, num);
 	}
 
 	/*loop through table looking for the DCCP ack number*/
