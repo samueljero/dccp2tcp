@@ -202,8 +202,8 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 		exit(1);
 		return 0;
 	}
-	if(old->length < sizeof(struct dccp_hdr) || new->length < sizeof(struct dccp_hdr)){
-		dbgprintf(0, "Error: Convert Packet Function given packet of wrong size!\n");
+	if(old->length < (sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext)) || new->length < sizeof(struct dccp_hdr)){
+		dbgprintf(0, "Error: DCCP Packet Too short!\n");
 		return 0;
 	}
 
@@ -223,6 +223,17 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 	if(h1==NULL || h2==NULL){
 		dbgprintf(0, "Error: Can't Get Hosts!\n");
 		return 0;
+	}
+
+	/*Ensure packet is at least as large as DCCP header*/
+	if(old->length < dccph->dccph_doff*4){
+		dbgprintf(0, "Error: DCCP Header truncated\n");
+		return 0;
+	}
+	if(dccph->dccph_type!=DCCP_PKT_DATA &&
+			old->length < (sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext) +
+			sizeof(struct dccp_hdr_ack_bits))){
+		dbgprintf(0, "Error: DCCP Packet Too short!\n");
 	}
 
 	/*determine data length*/
@@ -506,13 +517,19 @@ unsigned int interp_ack_vect(u_char* hdr)
 
 	/*parse options*/
 	while(optlen > 0){
-		len=*(opt+1);
 
 		/*One byte options (no length)*/
 		if(*opt< 32){
 			optlen--;
 			opt++;
 			continue;
+		}
+
+		/*Check option length*/
+		len=*(opt+1);
+		if(len > optlen){
+			dbgprintf(0, "Warning: Option would extend into packet data\n");
+			return additional;
 		}
 
 		/*Ack Vector Option*/
@@ -536,7 +553,7 @@ unsigned int interp_ack_vect(u_char* hdr)
 				}
 
 				if(((*cur& 0xC0)!= 0xC0) && ((*cur& 0xC0)!= 0x00) && ((*cur& 0xC0)!= 0x40)){
-					dbgprintf(1, "Warning: Invalid Ack Vector!! (Linux will handle poorly!) -- %X\n", *cur);
+					dbgprintf(1, "Warning: Invalid Ack Vector!! (Linux will handle poorly!)\n");
 				}
 				tmp--;
 				cur++;
@@ -715,13 +732,18 @@ void ack_vect2sack(struct host *seq, struct tcphdr *tcph, u_char* tcpopts, u_cha
 
 	/*parse options*/
 	while(optlen > 0){
-		len=*(opt+1);
 
 		/*One byte options (no length)*/
 		if(*opt< 32){
 			optlen--;
 			opt++;
 			continue;
+		}
+
+		len=*(opt+1);
+		if(len > optlen){
+			dbgprintf(0, "Warning: Option would extend into packet data\n");
+			break;
 		}
 
 		/*Ack Vector Option*/
