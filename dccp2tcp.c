@@ -33,7 +33,7 @@ void process_packets();
 void handle_packet(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes);
 int convert_packet(struct packet *new, const struct const_packet* old);
 unsigned int interp_ack_vect(u_char* hdr);
-u_int32_t initialize_seq(struct host *seq, __be16 source, __be32 initial);
+u_int32_t initialize_seq(struct host *seq, __be32 initial);
 u_int32_t add_new_seq(struct host *seq, __be32 num, int size, enum dccp_pkt_type type);
 u_int32_t convert_ack(struct host *seq, __be32 num);
 int acked_packet_size(struct host *seq, __be32 num);
@@ -260,7 +260,7 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 				tcph->window=htons(0);
 			}
 			tcph->ack_seq=htonl(0);
-			tcph->seq=htonl(initialize_seq(h1, dccph->dccph_sport, ntohl(dccphex->dccph_seq_low)));
+			tcph->seq=htonl(initialize_seq(h1, ntohl(dccphex->dccph_seq_low)));
 			tcph->syn=1;
 			tcph->ack=0;
 			tcph->fin=0;
@@ -287,7 +287,7 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 			if(yellow){
 				tcph->window=htons(0);
 			}
-			tcph->seq=htonl(initialize_seq(h1, dccph->dccph_sport, ntohl(dccphex->dccph_seq_low)));
+			tcph->seq=htonl(initialize_seq(h1, ntohl(dccphex->dccph_seq_low)));
 			tcph->syn=1;
 			tcph->ack=1;
 			tcph->fin=0;
@@ -570,7 +570,7 @@ return additional;
 
 
 /* Setup Sequence Number Structure*/
-u_int32_t initialize_seq(struct host *seq, __be16 source, __be32 initial)
+u_int32_t initialize_seq(struct host *seq, __be32 initial)
 {
 	/*set default values*/
 	seq->cur=0;
@@ -604,7 +604,7 @@ u_int32_t add_new_seq(struct host *seq, __be32 num, int size, enum dccp_pkt_type
 	
 	if(seq->table==NULL){
 		dbgprintf(1, "Warning: Connection uninitialized\n");
-		return initialize_seq(seq, 0, num);
+		return initialize_seq(seq, num);
 	}
 
 	/*account for missing packets*/
@@ -651,7 +651,7 @@ u_int32_t convert_ack(struct host *seq, __be32 num)
 
 	if(seq->table==NULL){
 		dbgprintf(1, "Warning: Connection uninitialized\n");
-		initialize_seq(seq, 0, num);
+		initialize_seq(seq, num);
 	}
 
 	/*loop through table looking for the DCCP ack number*/
@@ -676,7 +676,7 @@ int acked_packet_size(struct host *seq, __be32 num)
 
 	if(seq->table==NULL){
 		dbgprintf(1, "Warning: Connection uninitialized\n");
-		initialize_seq(seq, 0, num);
+		initialize_seq(seq, num);
 	}
 
 	/*loop through table looking for the DCCP ack number*/
