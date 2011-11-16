@@ -209,7 +209,6 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 
 	/*cast header pointers*/
 	tcph=(struct tcphdr*)new->data;
-	tcpopt=new->data + sizeof(struct tcphdr);
 	dccph=(struct dccp_hdr*)old->data;
 	dccphex=(struct dccp_hdr_ext*)(old->data+sizeof(struct dccp_hdr));
 	dccphack=(struct dccp_hdr_ack_bits*)(old->data+ sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext));
@@ -258,6 +257,7 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 
 			/* add Sack-permitted option, if relevant*/
 			if(sack){
+				tcpopt=(u_char*)(new->data + tcph->doff*4);
 				*tcpopt=4;
 				tcpopt++;
 				*tcpopt=2;
@@ -284,6 +284,7 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 
 			/* add Sack-permitted option, if relevant*/
 			if(sack){
+				tcpopt=(u_char*)(new->data + tcph->doff*4);
 				*tcpopt=4;
 				*(tcpopt+1)=2;
 				tcph->doff++;
@@ -312,7 +313,7 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 		}
 		if(sack){
 			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-				ack_vect2sack(h2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				ack_vect2sack(h2, tcph, (u_char*)tcph + tcph->doff*4, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
 		}
 
@@ -345,7 +346,7 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 		}
 		if(sack){
 			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-				ack_vect2sack(h2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				ack_vect2sack(h2, tcph, (u_char*)tcph + tcph->doff*4, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
 		}
 
@@ -377,7 +378,7 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 		}
 		if(sack){
 			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-				ack_vect2sack(h2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				ack_vect2sack(h2, tcph, (u_char*)tcph + tcph->doff*4, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
 		}
 
@@ -406,7 +407,7 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 		}
 		if(sack){
 			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-				ack_vect2sack(h2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				ack_vect2sack(h2, tcph, (u_char*)tcph + tcph->doff*4, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
 		}
 
@@ -434,7 +435,7 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 		}
 		if(sack){
 			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-				ack_vect2sack(h2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
+				ack_vect2sack(h2, tcph, (u_char*)tcph + tcph->doff*4, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
 			}
 		}
 
@@ -462,7 +463,7 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 		}
 		if(sack){
 			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-				ack_vect2sack(h2, tcph, tcpopt, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low));
+				ack_vect2sack(h2, tcph, (u_char*)tcph + tcph->doff*4, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low));
 			}
 		}
 

@@ -74,12 +74,12 @@ int ethernet_encap(struct packet *new, const struct const_packet *old)
 		nnew.data= new->data + sizeof(struct ether_header);
 		nold.length= old->length - sizeof(struct ether_header);
 		nnew.length= new->length - sizeof(struct ether_header);
+		nnew.h=new->h;
+		nold.h=old->h;
 
 		/*Select Next Protocol*/
 		switch(ntohs(ethh->ether_type)){
 			case ETHERTYPE_IP:
-					nnew.h=new->h;
-					nold.h=old->h;
 					if(!ipv4_encap(&nnew, &nold)){
 							return 0;
 					}
@@ -123,6 +123,8 @@ int ipv4_encap(struct packet *new, const struct const_packet *old)
 		nnew.data= new->data +iph->ihl*4;
 		nold.length= old->length -iph->ihl*4;
 		nnew.length= new->length -iph->ihl*4;
+		nnew.h=new->h;
+		nold.h=old->h;
 
 		/*Confirm that this is IPv4*/
 		if(iph->version!=4){
@@ -134,8 +136,6 @@ int ipv4_encap(struct packet *new, const struct const_packet *old)
 		switch(iph->protocol){
 			case 0x21:
 					/*DCCP*/
-					nnew.h=new->h;
-					nold.h=old->h;
 					nnew.src_id=iph->saddr;
 					nnew.dest_id=iph->daddr;
 					if(!convert_packet(&nnew, &nold)){
@@ -162,7 +162,7 @@ int ipv4_encap(struct packet *new, const struct const_packet *old)
 		}
 
 		/*Adjust IPv4 header to account for packet's total length*/
-		iph->tot_len=htons(nnew.length);
+		iph->tot_len=htons(new->length);
 return 1;
 }
 
@@ -194,6 +194,8 @@ int linux_cooked_encap(struct packet *new, const struct const_packet *old)
 	nnew.data= new->data + sizeof(struct sll_header);
 	nold.length= old->length - sizeof(struct sll_header);
 	nnew.length= new->length- sizeof(struct sll_header);
+	nnew.h=new->h;
+	nold.h=old->h;
 
 	/*Confirm that this is SLL*/
 	if(ntohs(slh->sll_pkttype) > 4){
@@ -204,8 +206,6 @@ int linux_cooked_encap(struct packet *new, const struct const_packet *old)
 	/*Select Next Protocol*/
 	switch(ntohs(slh->sll_protocol)){
 		case ETHERTYPE_IP:
-				nnew.h=new->h;
-				nold.h=old->h;
 				if(!ipv4_encap(&nnew, &nold)){
 						return 0;
 				}
