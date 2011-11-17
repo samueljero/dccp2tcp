@@ -608,9 +608,14 @@ u_int32_t add_new_seq(struct host *seq, __be32 num, int size, enum dccp_pkt_type
 	}
 
 	/*account for missing packets*/
+	if(num - seq->table[seq->cur].old +1 >=100){
+			dbgprintf(1,"Missing more than 100 packets!\n");
+	}
 	while(seq->table[seq->cur].old +1 < num && seq->table[seq->cur].old +1 > 0){
 		prev=seq->cur;
-		dbgprintf(1,"Missing Packet: %X\n",seq->table[prev].new+1);
+		if(num - seq->table[seq->cur].old +1 <100){
+			dbgprintf(1,"Missing Packet: %X\n",seq->table[prev].new+1);
+		}
 		seq->cur=(seq->cur+1)%(seq->size);/*find next available table slot*/
 		seq->table[seq->cur].old=seq->table[prev].old+1;
 		seq->table[seq->cur].new=seq->table[prev].new + seq->table[prev].size;
