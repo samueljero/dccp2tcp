@@ -25,12 +25,14 @@ int get_host(uint32_t src_id, uint32_t dest_id, int src_port, int dest_port, str
 	/*Loop list looking for connection*/
 	ptr=chead;
 	while(ptr!=NULL){
-		if(ptr->A.id==src_id && ptr->A.port==src_port && ptr->A.state!=CLOSE){
+		if(ptr->A.id==src_id && ptr->A.port==src_port &&
+				!(ptr->A.state==CLOSE && ptr->B.state==CLOSE)){
 			*fwd=&ptr->A;
 			*rev=&ptr->B;
 			return 0;
 		}
-		if(ptr->B.id==src_id && ptr->B.port==src_port && ptr->B.state!=CLOSE){
+		if(ptr->B.id==src_id && ptr->B.port==src_port &&
+				!(ptr->B.state==CLOSE && ptr->A.state==CLOSE)){
 			*fwd=&ptr->B;
 			*rev=&ptr->A;
 			return 0;
@@ -89,4 +91,18 @@ int update_state(struct host* hst, enum con_state st){
 	}
 	hst->state=st;
 	return 0;
+}
+
+/*Free all connections*/
+void cleanup_connections(){
+	struct connection *ptr;
+	struct connection *prev;
+	prev=ptr=chead;
+
+	while(ptr!=NULL){
+		prev=ptr;
+		ptr=ptr->next;
+		free(prev);
+	}
+return;
 }

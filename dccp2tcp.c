@@ -131,6 +131,9 @@ int main(int argc, char *argv[])
 	/*close files*/
 	pcap_close(in);
 	pcap_dump_close(out);
+
+	/*Delete all connections*/
+	cleanup_connections();
 return 0;
 }
 

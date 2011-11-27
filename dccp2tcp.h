@@ -122,5 +122,6 @@ int do_encap(int link, struct packet *new, const struct const_packet *old);
 int get_host(uint32_t src_id, uint32_t dest_id, int src_port, int dest_port, struct host **fwd, struct host **rev);
 struct connection *add_connection(uint32_t src_id, uint32_t dest_id, int src_port, int dest_port);
 int update_state(struct host* hst, enum con_state st);
+void cleanup_connections();
 
 #endif
