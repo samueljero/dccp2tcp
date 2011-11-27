@@ -56,8 +56,9 @@ int main(int argc, char *argv[])
 
 	/*loop through commandline options*/
 	for(int i=1; i < argc; i++){
-		if(argv[i][0]!='-'){
-			if(dfile==NULL){ /*assign first non-dash argument to the dccp file*/
+		if(argv[i][0]!='-' || (argv[i][0]=='-' && strlen(argv[i])==1)){
+			if(dfile==NULL  || argv[i][0]=='-'){
+				/*assign first non-dash (or only dash) argument to the dccp file*/
 				dfile=argv[i];
 			}else{
 				if(tfile==NULL){
