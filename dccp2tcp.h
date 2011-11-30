@@ -1,7 +1,7 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 7/2011
+Date: 11/2011
 
 Description: Header file for program to convert a DCCP flow to a TCP flow for DCCP
  	 	 analysis via tcptrace.
@@ -10,9 +10,8 @@ Notes:
 	1)CCID2 ONLY
 	2)DCCP MUST use 48 bit sequence numbers
 	3)Checksums are not computed (they are zeroed)
-	4)Only implements those packet types normally used in a session
+	4)DCCP DATA packets are not implemented (Linux doesn't use them)
 	5)DCCP Ack packets show up as TCP packets containing one byte
-	6)Very little error checking of packet headers
 ******************************************************************************/
 #ifndef _DCCP2TCP_H
 #define _DCCP2TCP_H

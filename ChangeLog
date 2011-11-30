@@ -1,3 +1,15 @@
+11/29/2011
+	Release 1.5:
+	Improvements:
+	1)Multiple connection support and removal of source port != destination port restriction
+	2)Add warning about malformed ACK vectors
+	3)Speed up processing of connections with huge losses when running with debug enabled
+	Bug Fixes:
+	1)Length checks to ensure entire DCCP header is captured
+	2)Correct command line option processing to allow stdin as packet source. This enables processing of compressed
+		captures using, for example, zcat.
+
+
 05/25/2011:
 	Release 1.4:
 	Improvements:

@@ -1,7 +1,7 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 7/2011
+Date: 11/2011
 
 Description: Encapsulation Functions for DCCP conversion to TCP
 
