@@ -1,7 +1,7 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 11/2011
+Date: 11/2012
 
 Description: Program to convert a DCCP flow to a TCP flow for DCCP analysis via
 		tcptrace.
@@ -27,8 +27,6 @@ struct connection *chead;	/*connection list*/
 
 
 
-void PcapSavePacket(struct pcap_pkthdr *h, u_char *data);
-void process_packets();
 void handle_packet(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes);
 int convert_packet(struct packet *new, const struct const_packet* old);
 unsigned int interp_ack_vect(u_char* hdr);
@@ -157,8 +155,12 @@ void handle_packet(u_char *user, const struct pcap_pkthdr *h, const u_char *byte
 	old.h=h;
 	old.length=h->caplen;
 	old.data=bytes;
+	old.dest_id=NULL;
+	old.src_id=NULL;
 	new.h=&nh;
 	new.length=MAX_PACKET;
+	new.dest_id=NULL;
+	new.src_id=NULL;
 
 	/*create buffer for new packet*/
 	new.data=ndata=malloc(MAX_PACKET);
@@ -216,10 +218,12 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 	dccphex=(struct dccp_hdr_ext*)(old->data+sizeof(struct dccp_hdr));
 	dccphack=(struct dccp_hdr_ack_bits*)(old->data+ sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext));
 
-	dbgprintf(2,"Sequence Number: %llu\n", (unsigned long long)(((unsigned long)ntohs(dccph->dccph_seq)<<32) + ntohl(dccphex->dccph_seq_low)));
+	dbgprintf(2,"Sequence Number: %llu\n", (unsigned long long)
+			(((unsigned long)ntohs(dccph->dccph_seq)<<32) + ntohl(dccphex->dccph_seq_low)));
 
 	/*Get Hosts*/
-	if(get_host(new->src_id, new->dest_id, dccph->dccph_sport, dccph->dccph_dport, &h1, &h2)){
+	if(get_host(new->src_id, new->dest_id, new->id_len,
+			dccph->dccph_sport, dccph->dccph_dport, &h1, &h2)){
 		dbgprintf(0,"Error: Can't Get Hosts!\n");
 		return 0;
 	}

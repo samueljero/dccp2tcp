@@ -1,7 +1,7 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 11/2011
+Date: 11/2012
 
 Description: Header file for Encapsulation Functions for DCCP to TCP conversion
 
@@ -26,12 +26,14 @@ Description: Header file for Encapsulation Functions for DCCP to TCP conversion
  *  						space AND must return with this parameter containing
  *  						the length of the new packet at that layer.
  *
- *  	uint32_t src_id:	This is an ID for the source host. If you are going to
+ *  	int id_len:			Length of the source and destination ID.
+ *
+ *  	u_char *src_id:		This is an ID for the source host. If you are going to
  *  						demultiplex DCCP on anything but Port Numbers, you
  *  						need to set this field. Typically this would be an
  *  						IP address.
  *
- *  	uint32_t dest_id: 	This is an ID for the destination host. If you are going to
+ *  	u_char *dest_id: 	This is an ID for the destination host. If you are going to
  *  						demultiplex DCCP on anything but Port Numbers, you
  *  						need to set this field. Typically this would be an
  *  						IP address.
@@ -58,5 +60,6 @@ int convert_packet(struct packet *new, const struct const_packet *old);
 int ethernet_encap(struct packet *new, const struct const_packet *old);
 int linux_cooked_encap(struct packet *new, const struct const_packet *old);
 int ipv4_encap(struct packet *new, const struct const_packet *old);
+int ipv6_encap(struct packet *new, const struct const_packet *old);
 
 #endif /* ENCAP_H_ */

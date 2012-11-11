@@ -1,14 +1,15 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 11/2011
+Date: 11/2012
 
 Description: Encapsulation Functions for DCCP conversion to TCP
 
 ******************************************************************************/
 #include "dccp2tcp.h"
 #include "encap.h"
-#include "pcap/sll.h"
+#include <pcap/sll.h>
+#include <netinet/ip6.h>
 
 /*Encapsulation start point and link layer selector*/
 int do_encap(int link, struct packet *new, const struct const_packet *old)
@@ -84,6 +85,11 @@ int ethernet_encap(struct packet *new, const struct const_packet *old)
 							return 0;
 					}
 					break;
+			case ETHERTYPE_IPV6:
+					if(!ipv6_encap(&nnew, &nold)){
+							return 0;
+					}
+					break;
 			default:
 					dbgprintf(1, "Unknown Next Protocol at Ethernet\n");
 					return 0;
@@ -92,6 +98,87 @@ int ethernet_encap(struct packet *new, const struct const_packet *old)
 
 		/*Adjust length*/
 		new->length=nnew.length + sizeof(struct ether_header);
+return 1;
+}
+
+/*IPv6 Encapsulation*/
+int ipv6_encap(struct packet *new, const struct const_packet *old)
+{
+		struct ip6_hdr 		*iph;
+		struct packet		nnew;
+		struct const_packet	nold;
+
+		/*Safety checks*/
+		if(!new || !old || !new->data || !old->data || !new->h || !old->h){
+			dbgprintf(0,"Error: IPv6 Encapsulation Function given bad data!\n");
+			return 0;
+		}
+		if(old->length < sizeof(struct ip6_hdr) || new->length < sizeof(struct ip6_hdr)){
+			dbgprintf(0, "Error: IPv6 Encapsulation Function given packet of wrong size!\n");
+			return 0;
+		}
+
+		/*Copy IPv6 header over*/
+		memcpy(new->data, old->data, sizeof(struct ip6_hdr));
+
+		/*Cast Pointer*/
+		iph=(struct ip6_hdr*)(new->data);
+
+		/*Adjust pointers and lengths*/
+		nold.data= old->data + sizeof(struct ip6_hdr);
+		nnew.data= new->data +sizeof(struct ip6_hdr);
+		nold.length= old->length - sizeof(struct ip6_hdr);
+		nnew.length= new->length - sizeof(struct ip6_hdr);
+		nnew.h=new->h;
+		nold.h=old->h;
+
+		/*Confirm that this is IPv6*/
+		if((ntohl(iph->ip6_ctlun.ip6_un1.ip6_un1_flow) & (0xF0000000)) == (60000000)){
+			dbgprintf(1, "Note: Packet is not IPv6\n");
+			return 0;
+		}
+
+		/*Select Next Protocol*/
+		switch(iph->ip6_ctlun.ip6_un1.ip6_un1_nxt){
+			case 33:
+					/*DCCP*/
+					nnew.id_len=16;
+					nnew.src_id=malloc(nnew.id_len);
+					nnew.dest_id=malloc(nnew.id_len);
+					if(nnew.src_id==NULL||nnew.dest_id==NULL){
+						dbgprintf(0,"Error: Couldn't allocate Memory\n");
+						exit(1);
+					}
+					memcpy(nnew.src_id,&iph->ip6_src,nnew.id_len);
+					memcpy(nnew.dest_id,&iph->ip6_dst,nnew.id_len);
+					if(!convert_packet(&nnew, &nold)){
+						return 0;
+					}
+					break;
+			default:
+					dbgprintf(1, "Unknown Next Protocol at IPv6\n");
+					return 0;
+					break;
+		}
+
+		/*set ip to indicate that TCP is next protocol*/
+		iph->ip6_ctlun.ip6_un1.ip6_un1_nxt=6;
+
+		/*Determine if computed length is reasonable*/
+		if(nnew.length > 0xFFFF){
+				dbgprintf(1, "Error: Given TCP data length is too large for an IPv6 packet!\n");
+				return 0;
+		}
+
+		/*Adjust IPv6 header to account for packet's total length*/
+		iph->ip6_ctlun.ip6_un1.ip6_un1_plen=htons(new->length);
+
+		/*Adjust length*/
+		new->length=nnew.length + sizeof(struct ip6_hdr);
+
+		/*Cleanup*/
+		free(nnew.dest_id);
+		free(nnew.src_id);
 return 1;
 }
 
@@ -134,10 +221,17 @@ int ipv4_encap(struct packet *new, const struct const_packet *old)
 
 		/*Select Next Protocol*/
 		switch(iph->protocol){
-			case 0x21:
+			case 33:
 					/*DCCP*/
-					nnew.src_id=iph->saddr;
-					nnew.dest_id=iph->daddr;
+					nnew.id_len=4;
+					nnew.src_id=malloc(nnew.id_len);
+					nnew.dest_id=malloc(nnew.id_len);
+					if(nnew.src_id==NULL||nnew.dest_id==NULL){
+						dbgprintf(0,"Error: Couldn't allocate Memory\n");
+						exit(1);
+					}
+					memcpy(nnew.src_id,&iph->saddr,nnew.id_len);
+					memcpy(nnew.dest_id,&iph->daddr,nnew.id_len);
 					if(!convert_packet(&nnew, &nold)){
 						return 0;
 					}
@@ -163,6 +257,10 @@ int ipv4_encap(struct packet *new, const struct const_packet *old)
 
 		/*Adjust IPv4 header to account for packet's total length*/
 		iph->tot_len=htons(new->length);
+
+		/*Cleanup*/
+		free(nnew.src_id);
+		free(nnew.dest_id);
 return 1;
 }
 
@@ -207,6 +305,11 @@ int linux_cooked_encap(struct packet *new, const struct const_packet *old)
 	switch(ntohs(slh->sll_protocol)){
 		case ETHERTYPE_IP:
 				if(!ipv4_encap(&nnew, &nold)){
+						return 0;
+				}
+				break;
+		case ETHERTYPE_IPV6:
+				if(!ipv6_encap(&nnew, &nold)){
 						return 0;
 				}
 				break;

@@ -1,7 +1,7 @@
 /******************************************************************************
 Author: Samuel Jero
 
-Date: 11/2011
+Date: 11/2012
 
 Description: Header file for program to convert a DCCP flow to a TCP flow for DCCP
  	 	 analysis via tcptrace.
@@ -52,8 +52,9 @@ struct packet{
 	struct pcap_pkthdr	*h;		/*libpcap header*/
 	u_char				*data;	/*Packet Data*/
 	int					length;	/*Packet length*/
-	uint32_t			src_id; /*Source ID of packet*/
-	uint32_t			dest_id; /*Destination ID of packet*/
+	int					id_len; /*Length of IDs*/
+	u_char				*src_id; /*Source ID of packet*/
+	u_char				*dest_id;/*Destination ID of packet*/
 };
 
 /*Constant Packet structure*/
@@ -61,8 +62,9 @@ struct const_packet{
 	const struct pcap_pkthdr *h;	/*libpcap header*/
 	const u_char			*data;	/*Packet Data*/
 	int						length;	/*Packet length*/
-	uint32_t				src_id; /*Source ID of packet*/
-	uint32_t				dest_id;/*Destination ID of packet*/
+	int						id_len; /*Length of IDs*/
+	u_char					*src_id; /*Source ID of packet*/
+	u_char					*dest_id;/*Destination ID of packet*/
 };
 
 /*Connection states*/
@@ -74,7 +76,8 @@ enum con_state{
 
 /*Host---half of a connection*/
 struct host{
-	uint32_t 			id;		/*Host ID*/
+	int					id_len;	/*Length of ID*/
+	u_char 				*id;	/*Host ID*/
 	__be16				port;	/*Host DCCP port*/
 	struct tbl			*table;	/*Host Sequence Number Table*/
 	int					size;	/*Size of Sequence Number Table*/
@@ -118,8 +121,10 @@ void dbgprintf(int level, const char *fmt, ...);
 int do_encap(int link, struct packet *new, const struct const_packet *old);
 
 /*Connection functions*/
-int get_host(uint32_t src_id, uint32_t dest_id, int src_port, int dest_port, struct host **fwd, struct host **rev);
-struct connection *add_connection(uint32_t src_id, uint32_t dest_id, int src_port, int dest_port);
+int get_host(u_char *src_id, u_char* dest_id, int id_len, int src_port, int dest_port,
+		struct host **fwd, struct host **rev);
+struct connection *add_connection(u_char *src_id, u_char* dest_id, int id_len,
+		int src_port, int dest_port);
 int update_state(struct host* hst, enum con_state st);
 void cleanup_connections();
 
