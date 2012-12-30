@@ -1,0 +1,53 @@
+=head1 NAME
+
+dccp2tcp - convert DCCP packet captures to TCP captures for analysis with B<tcptrace>
+
+=head1 SYNOPSIS
+
+B<dccp2tcp> [-d] [-y] [-g] [-s] I<input_file> I<output_file> 
+
+=head1 DESCRIPTION
+
+B<dccp2tcp> takes a tcpdump packet capture of DCCP connections and converts it to a symantically
+equivalent TCP capture for analysis using standard TCP tools like B<tcptrace>.
+
+In order to utilize this program effectively you will also need B<tcptrace>, which you can download
+from http://www.tcptrace.org and the version of B<xplot> available from http://www.tcptrace.org under
+"Useful Companion Programs".
+
+B<dccp2tcp> only supports DCCP CCID 2 with 48 bit sequence numbers at this time. Further, checksums are
+not computed on the output packets---they are simply zeroed.
+
+=head1 OPTIONS
+
+=over 5
+
+=item B<-d>
+	
+Debug, repeat for additional verbosity
+
+=item B<-y>
+
+Shift the window line (yellow) in B<tcptrace> to the highest received acknowledgment.
+Normally this line is just a constant amount more than the ack number(i.e. useless).
+
+=item B<-g>
+
+Shift the ack line (green) in B<tcptrace> to the highest received acknowledgment.
+Normally this line is the standard TCP ack number, which, for DCCP, translates to
+the highest contiguous acknowledgement in the ack vector.
+
+=item B<-s>
+
+Converts the DCCP ack vector to TCP SACK blocks. Specify B<-s> twice to only see
+those Ack vectors with loss intervals in them.
+
+=back
+
+=head1 AUTHOR
+
+Samuel Jero <sj323707@ohio.edu>
+
+=head1 SEE ALSO
+
+B<tcptrace>(1), B<xplot>(1)

@@ -1,7 +1,7 @@
 ###############################################################################
 #Author: Samuel Jero
 #
-# Date: 11/2011
+# Date: 12/2012
 #
 # Makefile for program dccp2tcp
 ###############################################################################
@@ -20,7 +20,7 @@ BINDIR = /usr/local/bin
 MANDIR = /usr/local/man
 
 
-all: dccp2tcp
+all: dccp2tcp dccp2tcp.1
 
 dccp2tcp: dccp2tcp.o encap.o connections.o
 	gcc ${CFLAGS} ${LDLIBS} --std=gnu99 dccp2tcp.o encap.o connections.o -odccp2tcp
@@ -34,13 +34,16 @@ encap.o: encap.c dccp2tcp.h encap.h
 connections.o: dccp2tcp.h connections.c
 	gcc ${CFLAGS} ${LDLIBS} --std=gnu99 -c connections.c -oconnections.o
 
+dccp2tcp.1: dccp2tcp.pod
+	pod2man -s 1 -c "dccp2tcp" dccp2tcp.pod > dccp2tcp.1
+
 install: dccp2tcp
 	install -m 755 -o bin -g bin dccp2tcp ${BINDIR}/dccp2tcp
-#	install -m 444 -o bin -g bin dccp2tcp.1 ${MANDIR}/man1/dccp2tcp.1
+	install -m 444 -o bin -g bin dccp2tcp.1 ${MANDIR}/man1/dccp2tcp.1
 
 uninstall:
 	rm -f ${BINDIR}/dccp2tcp
-#	rm -r ${MANDIR}/man1/dccp2tcp.1
+	rm -f ${MANDIR}/man1/dccp2tcp.1
 
 clean:
-	rm -f *~ dccp2tcp core *.o
+	rm -f *~ dccp2tcp core *.o dccp2tcp.1
