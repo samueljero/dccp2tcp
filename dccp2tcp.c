@@ -30,25 +30,24 @@ Notes:
 #include "dccp2tcp.h"
 
 
+#define DCCP2TCP_VERSION 1.6
+#define COPYRIGHT_YEAR 2013
+
+
 int debug=0;	/*set to 1 to turn on debugging information*/
 int yellow=0;	/*tcptrace yellow line as currently acked packet*/
 int green=0;	/*tcptrace green line as currently acked packet*/
 int sack=0;		/*add TCP SACKS*/
+
 
 pcap_t*			in;			/*libpcap input file discriptor*/
 pcap_dumper_t	*out;		/*libpcap output file discriptor*/
 struct connection *chead;	/*connection list*/
 
 
-
 void handle_packet(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes);
-int convert_packet(struct packet *new, const struct const_packet* old);
-unsigned int interp_ack_vect(u_char* hdr);
-u_int32_t initialize_seq(struct host *seq, __be32 initial);
-u_int32_t add_new_seq(struct host *seq, __be32 num, int size, enum dccp_pkt_type type);
-u_int32_t convert_ack(struct host *seq, __be32 num);
-int acked_packet_size(struct host *seq, __be32 num);
-void ack_vect2sack(struct host *seq, struct tcphdr *tcph, u_char* tcpopts, u_char* dccphdr, __be32 dccpack);
+void version();
+void usage();
 
 
 /*Parse commandline options and open files*/
@@ -60,9 +59,8 @@ int main(int argc, char *argv[])
 	char *tfile=NULL;
 
 	/*parse commandline options*/
-	if(argc<3 || argc > 9){
-		dbgprintf(0, "Usage: dccp2tcp dccp_file tcp_file [-d] [-y] [-g] [-s]\n");
-		exit(1);
+	if(argc > 9){
+		usage();
 	}
 
 	/*loop through commandline options*/
@@ -75,29 +73,33 @@ int main(int argc, char *argv[])
 				if(tfile==NULL){
 					tfile=argv[i]; /*assign second non-dash argument to the dccp file*/
 				}else{
-					dbgprintf(0,"Usage: dccp2tcp dccp_file tcp_file [-d] [-y] [-g] [-s]\n");
-					exit(1);
+					usage();
 				}
 			}
 		}else{
-			if(argv[i][1]=='d' && strlen(argv[i])==2){ /*debug option*/
+			if(argv[i][1]=='d' && strlen(argv[i])==2){ /* -d */
 				debug++;
 			}
-			if(argv[i][1]=='y' && strlen(argv[i])==2){ /*yellow option*/
+			if(argv[i][1]=='y' && strlen(argv[i])==2){ /* -y */
 				yellow=1;
 			}
-			if(argv[i][1]=='g' && strlen(argv[i])==2){ /*green option*/
+			if(argv[i][1]=='g' && strlen(argv[i])==2){ /* -g */
 				green=1;
 			}
-			if(argv[i][1]=='s' && strlen(argv[i])==2){ /*sack option*/
+			if(argv[i][1]=='s' && strlen(argv[i])==2){ /* -s */
 				sack++;
+			}
+			if(argv[i][1]=='h' && strlen(argv[i])==2){ /* -h */
+				usage();
+			}
+			if(argv[i][1]=='V' && strlen(argv[i])==2){ /* -V */
+				version();
 			}
 		}
 	}
 	
 	if(dfile==NULL || tfile==NULL){
-		dbgprintf(0,"Usage: dccp2tcp dccp_file tcp_file [-d] [-y] [-g] [-s]\n");
-		exit(1);
+		usage();
 	}
 
 	/*all options validated*/
@@ -199,21 +201,13 @@ void handle_packet(u_char *user, const struct pcap_pkthdr *h, const u_char *byte
 return;
 }
 
-
 /*do all the dccp to tcp conversions*/
 int convert_packet(struct packet *new, const struct const_packet* old)
-{	
-	struct tcphdr 				*tcph;
+{
 	struct dccp_hdr 			*dccph;
 	struct dccp_hdr_ext 		*dccphex;
-	struct dccp_hdr_ack_bits 	*dccphack;
 	struct host					*h1=NULL;
 	struct host					*h2=NULL;
-	int 						datalength;
-	int							len=0;
-	const u_char* 				pd;
-	u_char* 					npd;
-	u_char* 					tcpopt;
 
 	/*Safety checks*/
 	if(!new || !old || !new->data || !old->data || !new->h || !old->h){
@@ -227,13 +221,17 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 	}
 
 	/*cast header pointers*/
-	tcph=(struct tcphdr*)new->data;
 	dccph=(struct dccp_hdr*)old->data;
 	dccphex=(struct dccp_hdr_ext*)(old->data+sizeof(struct dccp_hdr));
-	dccphack=(struct dccp_hdr_ack_bits*)(old->data+ sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext));
 
 	dbgprintf(2,"Sequence Number: %llu\n", (unsigned long long)
 			(((unsigned long)ntohs(dccph->dccph_seq)<<32) + ntohl(dccphex->dccph_seq_low)));
+
+	/*Ensure packet is at least as large as DCCP header*/
+	if(old->length < dccph->dccph_doff*4){
+		dbgprintf(0, "Error: DCCP Header truncated\n");
+		return 0;
+	}
 
 	/*Get Hosts*/
 	if(get_host(new->src_id, new->dest_id, new->id_len,
@@ -246,590 +244,35 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 		return 0;
 	}
 
-	/*Ensure packet is at least as large as DCCP header*/
-	if(old->length < dccph->dccph_doff*4){
-		dbgprintf(0, "Error: DCCP Header truncated\n");
-		return 0;
+	/*TODO: Add CCID detection*/
+	if(h1->type==CCID2 && h2->type==CCID2){
+		return ccid2_convert_packet(new,old);
 	}
-	if(dccph->dccph_type!=DCCP_PKT_DATA &&
-			old->length < (sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext) +
-			sizeof(struct dccp_hdr_ack_bits))){
-		dbgprintf(0, "Error: DCCP Packet Too short!\n");
+	if(h1->type==CCID3 && h2->type==CCID3){
+		//return ccid3_convert_packet(new,old);
 	}
 
-	/*determine data length*/
-	datalength=old->length - dccph->dccph_doff*4;
-	pd=old->data + dccph->dccph_doff*4;
-
-	/*set TCP standard features*/
-	tcph->source=dccph->dccph_sport;
-	tcph->dest=dccph->dccph_dport;
-	tcph->doff=5;
-	tcph->check=htonl(0);
-	tcph->urg_ptr=0;
-
-	/*Adjust TCP advertised window size*/
-	if(!yellow){
-		tcph->window=htons(30000);
-	}
-
-	/*make changes by packet type*/
-	if(dccph->dccph_type==DCCP_PKT_REQUEST){//DCCP REQUEST -->TCP SYN
-		dbgprintf(2,"Packet Type: Request\n");
-		if(h1->state==INIT){
-			if(yellow){
-				tcph->window=htons(0);
-			}
-			tcph->ack_seq=htonl(0);
-			tcph->seq=htonl(initialize_seq(h1, ntohl(dccphex->dccph_seq_low)));
-			tcph->syn=1;
-			tcph->ack=0;
-			tcph->fin=0;
-			tcph->rst=0;
-
-			/* add Sack-permitted option, if relevant*/
-			if(sack){
-				tcpopt=(u_char*)(new->data + tcph->doff*4);
-				*tcpopt=4;
-				tcpopt++;
-				*tcpopt=2;
-				tcph->doff++;
-			}
-
-			/*calculate length*/
-			len=tcph->doff*4;
-		}
-	}
-
-	if(dccph->dccph_type==DCCP_PKT_RESPONSE){//DCCP RESPONSE-->TCP SYN,ACK
-		dbgprintf(2,"Packet Type: Response\n");
-		if(h2->state==OPEN && h1->state==INIT){
-			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)));
-			if(yellow){
-				tcph->window=htons(0);
-			}
-			tcph->seq=htonl(initialize_seq(h1, ntohl(dccphex->dccph_seq_low)));
-			tcph->syn=1;
-			tcph->ack=1;
-			tcph->fin=0;
-			tcph->rst=0;
-
-			/* add Sack-permitted option, if relevant*/
-			if(sack){
-				tcpopt=(u_char*)(new->data + tcph->doff*4);
-				*tcpopt=4;
-				*(tcpopt+1)=2;
-				tcph->doff++;
-			}
-
-			/*calculate length*/
-			len=tcph->doff*4;
-		}
-	}
-
-	if(dccph->dccph_type==DCCP_PKT_DATA){//DCCP DATA----Never seen in packet capture
-		dbgprintf(0,"DCCP Data packet not yet implemented\n");
-		exit(1);
-	}
-
-	if(dccph->dccph_type==DCCP_PKT_DATAACK){//DCCP DATAACK-->TCP ACK with data
-		dbgprintf(2,"Packet Type: DataAck\n");
-		if(green){
-			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)));
-		}else{
-			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-		}
-		tcph->seq=htonl(add_new_seq(h1, ntohl(dccphex->dccph_seq_low),datalength, dccph->dccph_type));
-		if(yellow){
-			tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(h2, ntohl(dccphack->dccph_ack_nr_low)));
-		}
-		if(sack){
-			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-				ack_vect2sack(h2, tcph, (u_char*)tcph + tcph->doff*4, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-			}
-		}
-
-		tcph->syn=0;
-		tcph->ack=1;
-		tcph->fin=0;
-		tcph->rst=0;
-
-		/*copy data*/
-		npd=new->data + tcph->doff*4;
-		memcpy(npd, pd, datalength);
-
-		/*calculate length*/
-		len= tcph->doff*4 + datalength;
-	}
-
-	if(dccph->dccph_type==DCCP_PKT_ACK){ //DCCP ACK -->TCP ACK with no data
-		dbgprintf(2,"Packet Type: Ack\n");
-		if(green){
-			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)));
-		}else{
-			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-		}
-		tcph->seq=htonl(add_new_seq(h1, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
-		if(yellow){
-			tcph->window=htons(-interp_ack_vect((u_char*)dccph)*1400);
-			if(-interp_ack_vect((u_char*)dccph)*1400 > 65535){
-				printf("Note: TCP Window Overflow @ %d.%d\n", (int)old->h->ts.tv_sec, (int)old->h->ts.tv_usec);
-			}
-		}
-		if(sack){
-			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-				ack_vect2sack(h2, tcph, (u_char*)tcph + tcph->doff*4, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-			}
-		}
-
-		tcph->syn=0;
-		tcph->ack=1;
-		tcph->fin=0;
-		tcph->rst=0;
-
-		/*calculate length*/
-		len=tcph->doff*4 + 1;
-	}
-
-	if(dccph->dccph_type==DCCP_PKT_CLOSEREQ){//DCCP CLOSEREQ----Never seen in packet capture
-		dbgprintf(0,"DCCP CloseReq not yet implemented\n");
-		exit(1);
-	}
-
-	if(dccph->dccph_type==DCCP_PKT_CLOSE){//DCCP CLOSE-->TCP FIN,ACK
-		dbgprintf(2,"Packet Type: Close\n");
-		update_state(h1,CLOSE);
-		if(green){
-			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)));
-		}else{
-			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-		}
-		tcph->seq=htonl(add_new_seq(h1, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
-		if(yellow){
-			tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(h2, ntohl(dccphack->dccph_ack_nr_low)));
-		}
-		if(sack){
-			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-				ack_vect2sack(h2, tcph, (u_char*)tcph + tcph->doff*4, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-			}
-		}
-
-		tcph->syn=0;
-		tcph->ack=1;
-		tcph->fin=1;
-		tcph->rst=0;
-
-		/*calculate length*/
-		len=tcph->doff*4;
-	}
-
-	if(dccph->dccph_type==DCCP_PKT_RESET){//DCCP RESET-->TCP FIN,ACK (only seen at end of connection as CLOSE ACK)
-		if(h2->state==CLOSE){
-			update_state(h1,CLOSE);
-		}
-		dbgprintf(2,"Packet Type: Reset\n");
-		if(green){
-			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)));
-		}else{
-			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-		}
-		tcph->seq=htonl(add_new_seq(h1, ntohl(dccphex->dccph_seq_low),1,dccph->dccph_type));
-		if(yellow){
-			tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(h2, ntohl(dccphack->dccph_ack_nr_low)));
-		}
-		if(sack){
-			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-				ack_vect2sack(h2, tcph, (u_char*)tcph + tcph->doff*4, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-			}
-		}
-
-		tcph->syn=0;
-		tcph->ack=1;
-		tcph->fin=1;
-		tcph->rst=0;
-
-		/*calculate length*/
-		len=tcph->doff*4;
-	}
-
-	if(dccph->dccph_type==DCCP_PKT_SYNC){//DCCP SYNC
-		dbgprintf(2,"Packet Type: Sync\n");
-		if(green){
-			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)));
-		}else{
-			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-		}
-		tcph->seq=htonl(add_new_seq(h1, ntohl(dccphex->dccph_seq_low),0,dccph->dccph_type));
-		if(yellow){
-			tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(h2, ntohl(dccphack->dccph_ack_nr_low)));
-		}else{
-			tcph->window=htons(0);
-		}
-		if(sack){
-			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-				ack_vect2sack(h2, tcph, (u_char*)tcph + tcph->doff*4, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low) );
-			}
-		}
-
-		tcph->syn=0;
-		tcph->ack=1;
-		tcph->fin=0;
-		tcph->rst=0;
-
-		/*calculate length*/
-		len=tcph->doff*4;
-	}
-
-	if(dccph->dccph_type==DCCP_PKT_SYNCACK){//DCCP SYNACK
-		dbgprintf(2,"Packet Type: SyncAck\n");
-		if(green){
-			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)));
-		}else{
-			tcph->ack_seq=htonl(convert_ack(h2,ntohl(dccphack->dccph_ack_nr_low)+interp_ack_vect((u_char*)dccph)));
-		}
-		tcph->seq=htonl(add_new_seq(h1, ntohl(dccphex->dccph_seq_low),0,dccph->dccph_type));
-		if(yellow){
-			tcph->window=htons(-interp_ack_vect((u_char*)dccph)*acked_packet_size(h2, ntohl(dccphack->dccph_ack_nr_low)));
-		}else{
-			tcph->window=htons(0);
-		}
-		if(sack){
-			if(sack!=2 || interp_ack_vect((u_char*)dccph)){
-				ack_vect2sack(h2, tcph, (u_char*)tcph + tcph->doff*4, (u_char*)dccph, ntohl(dccphack->dccph_ack_nr_low));
-			}
-		}
-
-		tcph->syn=0;
-		tcph->ack=1;
-		tcph->fin=0;
-		tcph->rst=0;
-
-		/*calculate length*/
-		len=tcph->doff*4;
-	}
-
-	if(dccph->dccph_type==DCCP_PKT_INVALID){//DCCP INVALID----Never seen in packet capture
-		dbgprintf(0,"Invalid DCCP Packet!!\n");
-		return 0;
-	}
-
-	new->length=len;
-return 1;
+	return ccid2_convert_packet(new,old);
 }
 
-
-/*Parse Ack Vector Options
- * Returns the Number of packets since last recorded loss*/
-unsigned int interp_ack_vect(u_char* hdr)
-{
-	int hdrlen=((struct dccp_hdr*)hdr)->dccph_doff*4;
-	//struct dccp_hdr_ext* e=(struct dccp_hdr_ext*)hdr + sizeof(struct dccp_hdr);
-	int optlen;
-	int len;
-	int tmp;
-	int bp=0;
-	int additional=0;
-	u_char* opt;
-	u_char* cur;
-
-	/*setup pointer to DCCP options and determine how long the options are*/
-	optlen=hdrlen-sizeof(struct dccp_hdr) - sizeof(struct dccp_hdr_ext) - sizeof(struct dccp_hdr_ack_bits);
-	opt=hdr + sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext) + sizeof(struct dccp_hdr_ack_bits);
-
-	/*parse options*/
-	while(optlen > 0){
-
-		/*One byte options (no length)*/
-		if(*opt< 32){
-			optlen--;
-			opt++;
-			continue;
-		}
-
-		/*Check option length*/
-		len=*(opt+1);
-		if(len > optlen){
-			dbgprintf(0, "Warning: Option would extend into packet data\n");
-			return additional;
-		}
-
-		/*Ack Vector Option*/
-		if(*opt==38 || *opt==39){
-			tmp=len-2;
-			cur=opt+2;
-			/*loop through Vector*/
-			while(tmp > 0){
-				/*ack vector works BACKWARDS through time*/
-
-				/*keep track of total packets recieved and if
-				a packet is lost, subtract all packets received
-				after that*/
-				if((*cur & 0xC0)==0xC0 || (*cur & 0xC0)==0x40){ //lost packet
-					bp+=(*cur & 0x3F)+1;
-					additional= -bp;
-				}
-					
-				if((*cur & 0xC0)==0x00){ //received packet
-					bp+= (*cur & 0x3F)+1;
-				}
-
-				if(((*cur& 0xC0)!= 0xC0) && ((*cur& 0xC0)!= 0x00) && ((*cur& 0xC0)!= 0x40)){
-					dbgprintf(1, "Warning: Invalid Ack Vector!! (Linux will handle poorly!)\n");
-				}
-				tmp--;
-				cur++;
-			}
-		}
-		
-		optlen-=len;
-		opt+=len;
-	}
-
-	dbgprintf(2,"Ack vector adding: %i\n", additional);
-return additional;
+void version(){
+	dbgprintf(0, "dccp2tcp version %.1f\nCopyright (C) %i Samuel Jero <sj323707@ohio.edu>\n", DCCP2TCP_VERSION,COPYRIGHT_YEAR);
+	dbgprintf(0, "This program comes with ABSOLUTELY NO WARRANTY.\n");
+	dbgprintf(0, "This is free software, and you are welcome to\nredistribute it under certain conditions.\n");
+	exit(0);
 }
 
-
-/* Setup Sequence Number Structure*/
-u_int32_t initialize_seq(struct host *seq, __be32 initial)
+/*Usage information for program*/
+void usage()
 {
-	/*set default values*/
-	seq->cur=0;
-	seq->size=TBL_SZ;
-	
-	/*allocate table*/
-	seq->table=(struct tbl*)malloc(sizeof(struct tbl)*TBL_SZ);
-	if(seq->table==NULL){
-		dbgprintf(0,"Can't Allocate Memory!\n");
-		exit(1);
-	}
-
-	/*add first sequence number*/
-	seq->table[0].old=initial;
-	seq->table[0].new=initial;
-	seq->table[0].type=DCCP_PKT_REQUEST;
-	seq->table[0].size=0;
-	update_state(seq,OPEN);
-return initial;
-}
-
-
-/*Convert Sequence Numbers*/
-u_int32_t add_new_seq(struct host *seq, __be32 num, int size, enum dccp_pkt_type type)
-{
-	int prev;
-	if(seq==NULL){
-		dbgprintf(0,"ERROR NULL POINTER!\n");
-		exit(1);
-	}
-	
-	if(seq->table==NULL){
-		dbgprintf(1, "Warning: Connection uninitialized\n");
-		return initialize_seq(seq, num);
-	}
-
-	/*account for missing packets*/
-	if(num - seq->table[seq->cur].old +1 >=100){
-			dbgprintf(1,"Missing more than 100 packets!\n");
-	}
-	while(seq->table[seq->cur].old +1 < num && seq->table[seq->cur].old +1 > 0){
-		prev=seq->cur;
-		if(num - seq->table[seq->cur].old +1 <100){
-			dbgprintf(1,"Missing Packet: %X\n",seq->table[prev].new+1);
-		}
-		seq->cur=(seq->cur+1)%(seq->size);/*find next available table slot*/
-		seq->table[seq->cur].old=seq->table[prev].old+1;
-		seq->table[seq->cur].new=seq->table[prev].new + seq->table[prev].size;
-		seq->table[seq->cur].size=size;
-		seq->table[seq->cur].type=type;
-	}
-
-	prev=seq->cur;
-	seq->cur=(seq->cur+1)%(seq->size);/*find next available table slot*/
-	seq->table[seq->cur].old=num;
-	seq->table[seq->cur].size=size;
-	seq->table[seq->cur].type=type;
-	if(seq->table[prev].type==DCCP_PKT_REQUEST || seq->table[prev].type==DCCP_PKT_RESPONSE){
-		seq->table[seq->cur].new=seq->table[prev].new + seq->table[prev].size;
-		seq->table[seq->cur].size=1;
-		return seq->table[prev].new + seq->table[prev].size+1;
-	}
-	if(type==DCCP_PKT_DATA || type==DCCP_PKT_DATAACK || type==DCCP_PKT_ACK){
-		seq->table[seq->cur].new=seq->table[prev].new + seq->table[prev].size;
-		return seq->table[seq->cur].new+1;
-	}
-	if(type==DCCP_PKT_SYNC || type==DCCP_PKT_SYNCACK){
-		seq->table[seq->cur].new=seq->table[prev].new + seq->table[prev].size;
-		return seq->table[seq->cur].new;
-	}
-	seq->table[seq->cur].new=seq->table[prev].new + seq->table[prev].size;
-return seq->table[seq->cur].new +1;
-}
-
-
-/*Convert Ack Numbers*/
-u_int32_t convert_ack(struct host *seq, __be32 num)
-{
-	if(seq==NULL){
-		dbgprintf(0,"ERROR NULL POINTER!\n");
-		exit(1);
-	}
-
-	if(seq->table==NULL){
-		dbgprintf(1, "Warning: Connection uninitialized\n");
-		initialize_seq(seq, num);
-	}
-
-	/*loop through table looking for the DCCP ack number*/
-	for(int i=0; i < seq->size; i++){
-		if(seq->table[i].old==num){
-			return 	seq->table[i].new + seq->table[i].size + 1; /*TCP acks the sequence number plus 1*/
-		}
-	}
-	
-	dbgprintf(1, "Error: Address Not Found! looking for: %X\n", num);
-return 0;
-}
-
-
-/* Get size of packet being acked*/
-int acked_packet_size(struct host *seq, __be32 num)
-{
-	if(seq==NULL){
-		dbgprintf(0,"ERROR NULL POINTER!\n");
-		exit(1);
-	}
-
-	if(seq->table==NULL){
-		dbgprintf(1, "Warning: Connection uninitialized\n");
-		initialize_seq(seq, num);
-	}
-
-	/*loop through table looking for the DCCP ack number*/
-	for(int i=0; i < seq->size; i++){
-		if(seq->table[i].old==num){
-			return 	seq->table[i].size;
-		}
-	}
-	
-	dbgprintf(1, "Error: Address Not Found! looking for: %X\n", num);
-return 0;
-}
-
-
-/*Ack Vector to SACK Option*/
-void ack_vect2sack(struct host *seq, struct tcphdr *tcph, u_char* tcpopts, u_char* dccphdr, __be32 dccpack)
-{
-	int hdrlen=((struct dccp_hdr*)dccphdr)->dccph_doff*4;
-	int optlen;
-	int len;
-	int tmp;
-	__be32 bp;
-	u_char* temp;
-	u_char* opt;
-	u_char* cur;
-	u_char* tlen;
-	u_int32_t bL=0;
-	u_int32_t bR;
-	u_int32_t* pL;
-	u_int32_t* pR;
-	int num_blocks;
-	int cont;
-	int isopt;
-	
-	/*setup pointer to DCCP options and determine how long the options are*/
-	optlen=hdrlen-sizeof(struct dccp_hdr) - sizeof(struct dccp_hdr_ext) - sizeof(struct dccp_hdr_ack_bits);
-	opt=dccphdr + sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext) + sizeof(struct dccp_hdr_ack_bits);
-
-	/*setup tcp pointers*/
-	num_blocks=4;
-	*tcpopts=5;
-	tlen=tcpopts+1;
-	temp=tlen;
-	temp++;
-	pL=(u_int32_t*)temp;
-	pR=pL+1;
-
-	/*setup tcp control variables*/
-	bp=dccpack;
-	cont=0;
-	*tlen=2;
-	isopt=0;
-
-	/*parse options*/
-	while(optlen > 0){
-
-		/*One byte options (no length)*/
-		if(*opt< 32){
-			optlen--;
-			opt++;
-			continue;
-		}
-
-		len=*(opt+1);
-		if(len > optlen){
-			dbgprintf(0, "Warning: Option would extend into packet data\n");
-			break;
-		}
-
-		/*Ack Vector Option*/
-		if(*opt==38 || *opt==39){
-			tmp=len-2;
-			cur=opt+2;
-			/*loop through Vector*/
-			while(tmp > 0){
-				/*ack vector works BACKWARDS through time*/
-
-				if((*cur & 0xC0)==0xC0 || (*cur & 0xC0)==0x40){ //lost packet
-					if(cont){ /*end a SACK run, if one is started*/
-						bR=convert_ack(seq, bp);
-						cont=0;
-						num_blocks--;
-						*pR=htonl(bR);
-						*pL=htonl(bL);
-						tcph->doff+=2;
-						*tlen+=8;
-						pL=pR+1;
-						pR=pL+1;			
-					}
-					bp= bp - (*cur & 0x3F)- 1;
-				}
-					
-				if((*cur & 0xC0)==0x00){ //received packet
-					if(!cont){ /*if no SACK run and we can start another one, do so*/
-						if(num_blocks>0){
-							bL=convert_ack(seq, bp);
-							isopt=1;
-							cont=1;
-
-						}
-					}
-					bp =  bp -(*cur & 0x3F)- 1;
-				}
-				tmp--;
-				cur++;
-			}
-		}
-		
-		optlen-=len;
-		opt+=len;
-	}
-
-	/*if we are in the middle of a SACK run, close it*/
-	if(cont){
-		bR=convert_ack(seq, bp);
-		*pR=htonl(bR);
-		*pL=htonl(bL);
-		tcph->doff+=2;
-		*tlen+=8;
-		cont=0;
-	}
-
-	/*adjust length if the option is actually added*/
-	if(isopt){
-		tcph->doff+=1;
-	}
-return;
+	dbgprintf(0,"Usage: dccp2tcp dccp_file tcp_file [-d] [-h] [-V] [-y] [-g] [-s]\n");
+	dbgprintf(0, "          -d   Debug. May be repeated for aditional verbosity.\n");
+	dbgprintf(0, "          -V   Version information\n");
+	dbgprintf(0, "          -h   Help\n");
+	dbgprintf(0, "          -y   Yellow line is highest ACK\n");
+	dbgprintf(0, "          -g   Green line is highest ACK\n");
+	dbgprintf(0, "          -s   convert ACK Vectors to SACKS\n");
+	exit(0);
 }
 
 /*Debug Printf*/

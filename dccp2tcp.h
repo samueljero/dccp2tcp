@@ -88,6 +88,13 @@ enum con_state{
 	CLOSE,
 };
 
+/*Connection Types (i.e. CCID)*/
+enum con_type{
+	UNKNOWN,
+	CCID2,
+	CCID3,
+};
+
 /*Host---half of a connection*/
 struct host{
 	int					id_len;	/*Length of ID*/
@@ -97,6 +104,7 @@ struct host{
 	int					size;	/*Size of Sequence Number Table*/
 	int					cur;	/*Current TCP Sequence Number*/
 	enum con_state		state;	/*Connection state*/
+	enum con_type		type;	/*Connection type*/
 };
 
 /*Connection structure*/
@@ -122,7 +130,6 @@ extern int sack;		/*add TCP SACKS*/
 
 extern struct connection *chead;/*connection list*/
 
-
 /*debug printf
  * Levels:
  * 	0) Always print even if debug isn't specified
@@ -141,5 +148,8 @@ struct connection *add_connection(u_char *src_id, u_char* dest_id, int id_len,
 		int src_port, int dest_port);
 int update_state(struct host* hst, enum con_state st);
 void cleanup_connections();
+
+/*Per-CCID convert functions*/
+int ccid2_convert_packet(struct packet *new, const struct const_packet* old);
 
 #endif
