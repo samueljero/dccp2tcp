@@ -2,7 +2,7 @@
 Utility to convert a DCCP flow to a TCP flow for DCCP analysis via
 		tcptrace.
 
-Copyright (C) 2012  Samuel Jero <sj323707@ohio.edu>
+Copyright (C) 2013  Samuel Jero <sj323707@ohio.edu>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -18,14 +18,13 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 Author: Samuel Jero <sj323707@ohio.edu>
-Date: 11/2012
+Date: 02/2013
 
 Notes:
 	1)CCID2 ONLY
 	2)DCCP MUST use 48 bit sequence numbers
-	3)Checksums are not computed (they are zeroed)
-	4)DCCP DATA packets are not implemented (Linux doesn't use them)
-	5)DCCP Ack packets show up as TCP packets containing one byte
+	3)DCCP DATA packets are not implemented (Linux doesn't use them)
+	4)DCCP Ack packets show up as TCP packets containing one byte
 ******************************************************************************/
 #include "dccp2tcp.h"
 

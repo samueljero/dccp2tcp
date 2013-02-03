@@ -23,9 +23,8 @@ Date: 11/2012
 Notes:
 	1)CCID2 ONLY
 	2)DCCP MUST use 48 bit sequence numbers
-	3)Checksums are not computed (they are zeroed)
-	4)DCCP DATA packets are not implemented (Linux doesn't use them)
-	5)DCCP Ack packets show up as TCP packets containing one byte
+	3)DCCP DATA packets are not implemented (Linux doesn't use them)
+	4)DCCP Ack packets show up as TCP packets containing one byte
 ******************************************************************************/
 #ifndef _DCCP2TCP_H
 #define _DCCP2TCP_H
@@ -53,6 +52,7 @@ Notes:
 #include <ctype.h>
 #include <pcap.h>
 #include <linux/dccp.h>
+#include "checksums.h"
 
 
 #define MAX_PACKET 	1600	/*Maximum size of TCP packet */

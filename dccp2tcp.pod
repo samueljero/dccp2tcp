@@ -15,8 +15,7 @@ In order to utilize this program effectively you will also need B<tcptrace>, whi
 from http://www.tcptrace.org and the version of B<xplot> available from http://www.tcptrace.org under
 "Useful Companion Programs".
 
-B<dccp2tcp> only supports DCCP CCID 2 with 48 bit sequence numbers at this time. Further, checksums are
-not computed on the output packets---they are simply zeroed.
+B<dccp2tcp> only supports DCCP CCID 2 with 48 bit sequence numbers at this time.
 
 =head1 OPTIONS
 

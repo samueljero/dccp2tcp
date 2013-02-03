@@ -22,8 +22,8 @@ MANDIR = /usr/local/man
 
 all: dccp2tcp dccp2tcp.1
 
-dccp2tcp: dccp2tcp.o encap.o connections.o ccid2.o
-	gcc ${CFLAGS} ${LDLIBS} --std=gnu99 dccp2tcp.o encap.o connections.o ccid2.o -odccp2tcp
+dccp2tcp: dccp2tcp.o encap.o connections.o ccid2.o checksums.o
+	gcc ${CFLAGS} ${LDLIBS} --std=gnu99 dccp2tcp.o encap.o connections.o ccid2.o checksums.o -odccp2tcp
 
 dccp2tcp.o: dccp2tcp.h dccp2tcp.c
 	gcc ${CFLAGS} ${LDLIBS} --std=gnu99 -c dccp2tcp.c -odccp2tcp.o
@@ -36,6 +36,9 @@ ccid2.o: ccid2.c dccp2tcp.h
 	
 connections.o: dccp2tcp.h connections.c
 	gcc ${CFLAGS} ${LDLIBS} --std=gnu99 -c connections.c -oconnections.o
+	
+checksums.o: checksums.c checksums.h
+	gcc ${CFLAGS} ${LDLIBS} --std=gnu99 -c checksums.c -ochecksums.o
 
 dccp2tcp.1: dccp2tcp.pod
 	pod2man -s 1 -c "dccp2tcp" dccp2tcp.pod > dccp2tcp.1

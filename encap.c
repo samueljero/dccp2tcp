@@ -23,12 +23,12 @@ Date: 11/2012
 Notes:
 	1)CCID2 ONLY
 	2)DCCP MUST use 48 bit sequence numbers
-	3)Checksums are not computed (they are zeroed)
-	4)DCCP DATA packets are not implemented (Linux doesn't use them)
-	5)DCCP Ack packets show up as TCP packets containing one byte
+	3)DCCP DATA packets are not implemented (Linux doesn't use them)
+	4)DCCP Ack packets show up as TCP packets containing one byte
 ******************************************************************************/
 #include "dccp2tcp.h"
 #include "encap.h"
+#include "checksums.h"
 #include <pcap/sll.h>
 #include <netinet/ip6.h>
 
@@ -278,6 +278,10 @@ int ipv4_encap(struct packet *new, const struct const_packet *old)
 
 		/*Adjust IPv4 header to account for packet's total length*/
 		iph->tot_len=htons(new->length);
+
+		/*Compute IPv4 Checksum*/
+		iph->check=0;
+		iph->check=ipv4_chksum(new->data,iph->ihl*4);
 
 		/*Cleanup*/
 		free(nnew.src_id);

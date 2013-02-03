@@ -23,9 +23,8 @@ Date: 11/2012
 Notes:
 	1)CCID2 ONLY
 	2)DCCP MUST use 48 bit sequence numbers
-	3)Checksums are not computed (they are zeroed)
-	4)DCCP DATA packets are not implemented (Linux doesn't use them)
-	5)DCCP Ack packets show up as TCP packets containing one byte
+	3)DCCP DATA packets are not implemented (Linux doesn't use them)
+	4)DCCP Ack packets show up as TCP packets containing one byte
 ******************************************************************************/
 #include "dccp2tcp.h"
 
@@ -204,6 +203,7 @@ return;
 /*do all the dccp to tcp conversions*/
 int convert_packet(struct packet *new, const struct const_packet* old)
 {
+	struct tcphdr 				*tcph;
 	struct dccp_hdr 			*dccph;
 	struct dccp_hdr_ext 		*dccphex;
 	struct host					*h1=NULL;
@@ -221,6 +221,7 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 	}
 
 	/*cast header pointers*/
+	tcph=(struct tcphdr*)new->data;
 	dccph=(struct dccp_hdr*)old->data;
 	dccphex=(struct dccp_hdr_ext*)(old->data+sizeof(struct dccp_hdr));
 
@@ -246,13 +247,32 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 
 	/*TODO: Add CCID detection*/
 	if(h1->type==CCID2 && h2->type==CCID2){
-		return ccid2_convert_packet(new,old);
+		if(ccid2_convert_packet(new,old)==0){
+			return 0;
+		}
 	}
 	if(h1->type==CCID3 && h2->type==CCID3){
-		//return ccid3_convert_packet(new,old);
+		//ccid3_convert_packet(new,old);
+	}
+	if(ccid2_convert_packet(new,old)==0){
+		return 0;
 	}
 
-	return ccid2_convert_packet(new,old);
+	/*Compute TCP checksums*/
+	if(new->id_len==IP4_ADDR_LEN){
+			tcph->check=0;
+			tcph->check=ipv4_pseudohdr_chksum(new->data,
+					new->length, new->dest_id, new->src_id, 6);
+	}else if(new->id_len==IP6_ADDR_LEN){
+			tcph->check=0;
+			tcph->check=ipv6_pseudohdr_chksum(new->data,
+					new->length, new->dest_id, new->src_id, 6);
+	}else{
+		tcph->check=0;
+		dbgprintf(2,"Unknown ID Length, can't do checksums");
+	}
+
+	return 1;
 }
 
 void version(){
