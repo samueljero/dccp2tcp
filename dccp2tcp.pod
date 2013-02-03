@@ -4,7 +4,7 @@ dccp2tcp - convert DCCP packet captures to TCP captures for analysis with B<tcpt
 
 =head1 SYNOPSIS
 
-B<dccp2tcp> [-d] [-y] [-g] [-s] I<input_file> I<output_file> 
+B<dccp2tcp> [-d] [-V] [-h] [-y] [-g] [-s] I<input_file> I<output_file> 
 
 =head1 DESCRIPTION
 
@@ -25,6 +25,14 @@ not computed on the output packets---they are simply zeroed.
 =item B<-d>
 	
 Debug, repeat for additional verbosity
+
+=item B<-V>
+	
+Version information
+
+=item B<-h>
+	
+Help message
 
 =item B<-y>
 
