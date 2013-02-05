@@ -2,7 +2,7 @@
 Utility to convert a DCCP flow to a TCP flow for DCCP analysis via
 		tcptrace.
 
-Copyright (C) 2012  Samuel Jero <sj323707@ohio.edu>
+Copyright (C) 2013  Samuel Jero <sj323707@ohio.edu>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -18,13 +18,11 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 Author: Samuel Jero <sj323707@ohio.edu>
-Date: 11/2012
+Date: 02/2013
 
 Notes:
-	1)CCID2 ONLY
-	2)DCCP MUST use 48 bit sequence numbers
-	3)DCCP DATA packets are not implemented (Linux doesn't use them)
-	4)DCCP Ack packets show up as TCP packets containing one byte
+	1)DCCP MUST use 48 bit sequence numbers
+	2)DCCP Ack packets show up as TCP packets containing one byte
 ******************************************************************************/
 #ifndef _DCCP2TCP_H
 #define _DCCP2TCP_H
@@ -58,8 +56,8 @@ Notes:
 #define MAX_PACKET 	1600	/*Maximum size of TCP packet */
 #define	TBL_SZ		40000	/*Size of Sequence Number Table*/
 
-
-
+#define TRUE 1
+#define FALSE 0
 
 /*Packet structure*/
 struct packet{
@@ -95,14 +93,15 @@ enum con_type{
 	CCID3,
 };
 
-/*Host---half of a connection*/
-struct host{
+/*Half Connection structure*/
+struct hcon{
 	int					id_len;	/*Length of ID*/
 	u_char 				*id;	/*Host ID*/
 	__be16				port;	/*Host DCCP port*/
 	struct tbl			*table;	/*Host Sequence Number Table*/
 	int					size;	/*Size of Sequence Number Table*/
 	int					cur;	/*Current TCP Sequence Number*/
+	int					high_ack;/*Highest ACK seen*/
 	enum con_state		state;	/*Connection state*/
 	enum con_type		type;	/*Connection type*/
 };
@@ -110,8 +109,8 @@ struct host{
 /*Connection structure*/
 struct connection{
 	struct connection	*next;	/*List pointer*/
-	struct host			A;		/*Host A*/
-	struct host			B;		/*Host B*/
+	struct hcon			A;		/*Host A*/
+	struct hcon			B;		/*Host B*/
 };
 
 /*sequence number table structure */
@@ -143,13 +142,17 @@ int do_encap(int link, struct packet *new, const struct const_packet *old);
 
 /*Connection functions*/
 int get_host(u_char *src_id, u_char* dest_id, int id_len, int src_port, int dest_port,
-		struct host **fwd, struct host **rev);
+		struct hcon **fwd, struct hcon **rev);
 struct connection *add_connection(u_char *src_id, u_char* dest_id, int id_len,
 		int src_port, int dest_port);
-int update_state(struct host* hst, enum con_state st);
+int update_state(struct hcon* hst, enum con_state st);
 void cleanup_connections();
 
-/*Per-CCID convert functions*/
-int ccid2_convert_packet(struct packet *new, const struct const_packet* old);
+/*Half Connection/Sequence number functions*/
+u_int32_t initialize_hcon(struct hcon *hcn, __be32 initial);
+u_int32_t add_new_seq(struct hcon *hcn, __be32 num, int size, enum dccp_pkt_type type);
+u_int32_t convert_ack(struct hcon *hcn, __be32 num, struct hcon *o_hcn);
+int acked_packet_size(struct hcon *hcn, __be32 num);
+unsigned int interp_ack_vect(u_char* hdr);
 
 #endif
