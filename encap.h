@@ -19,13 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 Author: Samuel Jero <sj323707@ohio.edu>
 Date: 11/2012
-
-Notes:
-	1)CCID2 ONLY
-	2)DCCP MUST use 48 bit sequence numbers
-	3)Checksums are not computed (they are zeroed)
-	4)DCCP DATA packets are not implemented (Linux doesn't use them)
-	5)DCCP Ack packets show up as TCP packets containing one byte
 ******************************************************************************/
 #ifndef ENCAP_H_
 #define ENCAP_H_

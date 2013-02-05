@@ -19,12 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 Author: Samuel Jero <sj323707@ohio.edu>
 Date: 11/2012
-
-Notes:
-	1)CCID2 ONLY
-	2)DCCP MUST use 48 bit sequence numbers
-	3)DCCP DATA packets are not implemented (Linux doesn't use them)
-	4)DCCP Ack packets show up as TCP packets containing one byte
 ******************************************************************************/
 #include "dccp2tcp.h"
 #include "encap.h"
@@ -192,7 +186,7 @@ int ipv6_encap(struct packet *new, const struct const_packet *old)
 		}
 
 		/*Adjust IPv6 header to account for packet's total length*/
-		iph->ip6_ctlun.ip6_un1.ip6_un1_plen=htons(new->length);
+		iph->ip6_ctlun.ip6_un1.ip6_un1_plen=htons(nnew.length);
 
 		/*Adjust length*/
 		new->length=nnew.length + sizeof(struct ip6_hdr);
