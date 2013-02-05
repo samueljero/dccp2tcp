@@ -32,13 +32,12 @@ tcptrace -lGt tcp_file
 You can then use xplot to view the resulting graphs, like this:
 xplot a2b_tsg.xpl a2b_rtt.xpl
 
+One important note on interpreting the graphs is that DCCP Ack packets show up
+as TCP packets containing one byte.
 
-This program does have several important limitations:
-	1)CCID2 ONLY
-	2)DCCP MUST use 48 bit sequence numbers.
-	3)DCCP DATA packets are not implemented (Linux doesn't use them)
-	4)DCCP Ack packets show up as TCP packets containing one byte
-
+Finally, an important limitation of this program is that DCCP MUST use 48 bit
+sequence numbers. dccp2tcp will complain at you if you try to process a connection
+with short sequence numbers.
 
 dccp2tcp is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -56,5 +55,7 @@ along with dccp2tcp.  If not, see <http://www.gnu.org/licenses/>.
 
 Copyright 2013
 Samuel Jero
-Computer Science student, Ohio University
+Masters Student
+Internetworking Research Group
+Ohio University
 sj323707@ohio.edu

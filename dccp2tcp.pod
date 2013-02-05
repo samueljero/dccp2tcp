@@ -15,7 +15,8 @@ In order to utilize this program effectively you will also need B<tcptrace>, whi
 from http://www.tcptrace.org and the version of B<xplot> available from http://www.tcptrace.org under
 "Useful Companion Programs".
 
-B<dccp2tcp> only supports DCCP CCID 2 with 48 bit sequence numbers at this time.
+B<dccp2tcp> only supports DCCP with 48 bit sequence numbers at this time. It will complain at you
+if you attempt to process a connection with short sequence numbers.
 
 =head1 OPTIONS
 
