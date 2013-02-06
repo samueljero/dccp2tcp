@@ -22,9 +22,11 @@ Date: 02/2013
 ******************************************************************************/
 #include "dccp2tcp.h"
 
+int isClosed(struct hcon *A, struct hcon *B, int pkt_type);
+
 /*Lookup a connection. If it doesn't exist, add a new connection and return it.*/
 int get_host(u_char *src_id, u_char* dest_id, int id_len, int src_port, int dest_port,
-		struct hcon **fwd, struct hcon **rev){
+		int pkt_type, struct hcon **fwd, struct hcon **rev){
 	struct connection *ptr;
 
 	/*Empty list*/
@@ -41,13 +43,13 @@ int get_host(u_char *src_id, u_char* dest_id, int id_len, int src_port, int dest
 	ptr=chead;
 	while(ptr!=NULL){
 		if(memcmp(ptr->A.id,src_id,id_len)==0 && ptr->A.port==src_port &&
-				!(ptr->A.state==CLOSE && ptr->B.state==CLOSE)){
+				!isClosed(&ptr->A, &ptr->B, pkt_type)){
 			*fwd=&ptr->A;
 			*rev=&ptr->B;
 			return 0;
 		}
 		if(memcmp(ptr->B.id,src_id,id_len)==0 && ptr->B.port==src_port &&
-				!(ptr->B.state==CLOSE && ptr->A.state==CLOSE)){
+				!isClosed(&ptr->A, &ptr->B, pkt_type)){
 			*fwd=&ptr->B;
 			*rev=&ptr->A;
 			return 0;
@@ -63,6 +65,25 @@ int get_host(u_char *src_id, u_char* dest_id, int id_len, int src_port, int dest
 	*fwd=&ptr->A;
 	*rev=&ptr->B;
 	return 0;
+}
+
+/*Returns true if the connection is closed and any packets should go to
+ * a new connection with the same four-tuple*/
+int isClosed(struct hcon *A, struct hcon *B, int pkt_type){
+	if(pkt_type==DCCP_PKT_REQUEST || pkt_type==DCCP_PKT_RESPONSE){
+		if(A->state==CLOSE && B->state==CLOSE){
+			/*We're opening a new connection on hosts/ports we've used before, mark
+			 * old connection as dead*/
+			A->state=DEAD;
+			B->state=DEAD;
+			return TRUE;
+		}
+	}else{
+		if(A->state==DEAD || B->state==DEAD){
+			return TRUE;
+		}
+	}
+	return FALSE;
 }
 
 /*Add a connection. Return it. On failure, return NULL*/
@@ -177,7 +198,7 @@ u_int32_t add_new_seq(struct hcon *hcn, __be32 num, int size, enum dccp_pkt_type
 	while(hcn->table[hcn->cur].old +1 < num && hcn->table[hcn->cur].old +1 > 0){
 		prev=hcn->cur;
 		if(num - hcn->table[hcn->cur].old +1 <100){
-			dbgprintf(1,"Missing Packet: %X\n",hcn->table[prev].new+1);
+			dbgprintf(1,"Missing Packet %i\n",hcn->table[prev].new+1);
 		}
 		hcn->cur=(hcn->cur+1)%(hcn->size);/*find next available table slot*/
 		hcn->table[hcn->cur].old=hcn->table[prev].old+1;
@@ -228,8 +249,9 @@ u_int32_t convert_ack(struct hcon *hcn, __be32 num, struct hcon *o_hcn)
 		}
 	}
 
-	dbgprintf(1, "Error: Address Not Found! looking for: %X. Using highest ACK, %i, instead\n", num, o_hcn->high_ack);
-return 0;
+	dbgprintf(1, "Error: Sequence Number Not Found! looking for %i. Using highest ACK, %i, instead.\n",
+																						num, o_hcn->high_ack);
+return o_hcn->high_ack;
 }
 
 /* Get size of packet being acked*/
@@ -252,7 +274,7 @@ int acked_packet_size(struct hcon *hcn, __be32 num)
 		}
 	}
 
-	dbgprintf(1, "Error: Address Not Found! looking for: %X\n", num);
+	dbgprintf(1, "Error: Sequence Number Not Found! looking for %i\n", num);
 return 0;
 }
 

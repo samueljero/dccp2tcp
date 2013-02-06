@@ -248,13 +248,18 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 	}
 
 	/*Get Hosts*/
-	if(get_host(new->src_id, new->dest_id, new->id_len,
-			dccph->dccph_sport, dccph->dccph_dport, &h1, &h2)){
+	if(get_host(new->src_id, new->dest_id, new->id_len, dccph->dccph_sport,
+			dccph->dccph_dport, dccph->dccph_type,&h1, &h2)){
 		dbgprintf(0,"Error: Can't Get Hosts!\n");
 		return 0;
 	}
 	if(h1==NULL || h2==NULL){
 		dbgprintf(0, "Error: Can't Get Hosts!\n");
+		return 0;
+	}
+	if(h1->state==IGNORE || h2->state==IGNORE){
+		dbgprintf(2, "Ignoring packet between %i and %i\n",
+						ntohs(dccph->dccph_sport), ntohs(dccph->dccph_dport));
 		return 0;
 	}
 
@@ -954,12 +959,20 @@ int parse_options(const u_char* opt_start, int len, struct hcon* A, struct hcon*
 
 		/*Ack Vector Option*/
 		if(*opt==38 || *opt==39){
-
+			if(B->type==UNKNOWN){
+				B->type=CCID2;
+				dbgprintf(1,"Half-connection from port %i to %i probably using CCID 2\n",
+											ntohs(B->port),ntohs(A->port));
+			}
 		}
 
 		/*NDP Count Option*/
 		if(*opt==37){
-
+			if(B->type==UNKNOWN){
+				B->type=CCID3;
+				dbgprintf(1,"Half-connection from port %i to %i probably using CCID 3\n",
+											ntohs(B->port),ntohs(A->port));
+			}
 		}
 
 		/*Feature negotation*/
@@ -1005,7 +1018,7 @@ int process_feature(const u_char* feat, int len, int confirm, int L, struct hcon
 	switch(*feat){
 		case 1:
 			/*CCID*/
-			if(confirm==FALSE){
+			if(confirm==TRUE){
 				switch(*val){
 					case 2:
 						ccid=CCID2;
@@ -1019,16 +1032,24 @@ int process_feature(const u_char* feat, int len, int confirm, int L, struct hcon
 				}
 				if(L==TRUE){
 					B->type=ccid;
+					dbgprintf(1,"Half-connection from port %i to %i using CCID %i\n",
+							ntohs(B->port),ntohs(A->port), *val);
 				}else{
 					A->type=ccid;
+					dbgprintf(1,"Half-connection from port %i to %i using CCID %i\n",
+							ntohs(A->port),ntohs(B->port), *val);
 				}
 			}
 			break;
 		case 2:
 			/*Short sequence nums*/
-			if(confirm==FALSE && *val==1){
-				dbgprintf(0,"Error! DCCP is trying to turn on short sequence numbers! We do not support this!!\n");
-				exit(1);
+			if(confirm==TRUE && *val==1){
+				B->type=IGNORE;
+				A->type=IGNORE;
+				dbgprintf(0,"Error: DCCP is trying to turn on short sequence numbers\n"
+						"  for the connection between %i and %i. We do not support this.\n"
+						"  This connection will be ignored.",ntohs(A->port),ntohs(B->port));
+				return 0;
 			}
 			break;
 	}
@@ -1157,9 +1178,11 @@ return;
 
 void version()
 {
-	dbgprintf(0, "dccp2tcp version %.1f\nCopyright (C) %i Samuel Jero <sj323707@ohio.edu>\n", DCCP2TCP_VERSION,COPYRIGHT_YEAR);
+	dbgprintf(0, "dccp2tcp version %.1f\n",DCCP2TCP_VERSION);
+	dbgprintf(0, "Copyright (C) %i Samuel Jero <sj323707@ohio.edu>\n",COPYRIGHT_YEAR);
 	dbgprintf(0, "This program comes with ABSOLUTELY NO WARRANTY.\n");
-	dbgprintf(0, "This is free software, and you are welcome to\nredistribute it under certain conditions.\n");
+	dbgprintf(0, "This is free software, and you are welcome to\n");
+	dbgprintf(0, "redistribute it under certain conditions.\n");
 	exit(0);
 }
 

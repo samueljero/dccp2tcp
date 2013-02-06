@@ -84,6 +84,8 @@ enum con_state{
 	INIT,
 	OPEN,
 	CLOSE,
+	DEAD,
+	IGNORE,
 };
 
 /*Connection Types (i.e. CCID)*/
@@ -142,7 +144,7 @@ int do_encap(int link, struct packet *new, const struct const_packet *old);
 
 /*Connection functions*/
 int get_host(u_char *src_id, u_char* dest_id, int id_len, int src_port, int dest_port,
-		struct hcon **fwd, struct hcon **rev);
+		int pkt_type, struct hcon **fwd, struct hcon **rev);
 struct connection *add_connection(u_char *src_id, u_char* dest_id, int id_len,
 		int src_port, int dest_port);
 int update_state(struct hcon* hst, enum con_state st);
