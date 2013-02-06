@@ -16,8 +16,8 @@ from http://www.tcptrace.org and the version of xplot available from http://www.
 
 
 Usage is pretty simple:
-dccp2tcp dccp_file tcp_file [-d] [-V] [h] [-y] [-g] [-s]
-	-d is debug
+dccp2tcp dccp_file tcp_file [-v] [-V] [h] [-y] [-g] [-s]
+	-v is verbose. Repeat for additional verbosity.
 	-V is Version information
 	-h is help
 	-y shifts the window line in tcptrace (yellow) to the highest received acknowledgment. Normally this line is just a constant amount more than the ack number(i.e. useless).

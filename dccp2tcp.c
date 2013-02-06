@@ -90,23 +90,20 @@ int main(int argc, char *argv[])
 				}
 			}
 		}else{
-			if(argv[i][1]=='d' && strlen(argv[i])==2){ /* -d */
+			if(argv[i][1]=='v' && strlen(argv[i])==2){ /* -v */
 				debug++;
-			}
-			if(argv[i][1]=='y' && strlen(argv[i])==2){ /* -y */
+			}else if(argv[i][1]=='y' && strlen(argv[i])==2){ /* -y */
 				yellow=1;
-			}
-			if(argv[i][1]=='g' && strlen(argv[i])==2){ /* -g */
+			}else if(argv[i][1]=='g' && strlen(argv[i])==2){ /* -g */
 				green=1;
-			}
-			if(argv[i][1]=='s' && strlen(argv[i])==2){ /* -s */
+			}else if(argv[i][1]=='s' && strlen(argv[i])==2){ /* -s */
 				sack++;
-			}
-			if(argv[i][1]=='h' && strlen(argv[i])==2){ /* -h */
+			}else if(argv[i][1]=='h' && strlen(argv[i])==2){ /* -h */
 				usage();
-			}
-			if(argv[i][1]=='V' && strlen(argv[i])==2){ /* -V */
+			}else if(argv[i][1]=='V' && strlen(argv[i])==2){ /* -V */
 				version();
+			}else{
+				usage();
 			}
 		}
 	}
@@ -118,7 +115,6 @@ int main(int argc, char *argv[])
 	/*all options validated*/
 
 	if(debug){
-		dbgprintf(1,"Debug On\n");
 		if(green){
 			dbgprintf(1,"Tcptrace green line at highest acknowledgment\n");
 		}else{
@@ -1229,8 +1225,8 @@ void version()
 /*Usage information for program*/
 void usage()
 {
-	dbgprintf(0,"Usage: dccp2tcp [-d] [-h] [-V] [-y] [-g] [-s] dccp_file tcp_file\n");
-	dbgprintf(0, "          -d   Debug. May be repeated for aditional verbosity.\n");
+	dbgprintf(0,"Usage: dccp2tcp [-v] [-h] [-V] [-y] [-g] [-s] dccp_file tcp_file\n");
+	dbgprintf(0, "          -v   verbose. May be repeated for additional verbosity.\n");
 	dbgprintf(0, "          -V   Version information\n");
 	dbgprintf(0, "          -h   Help\n");
 	dbgprintf(0, "          -y   Yellow line is highest ACK\n");
