@@ -22,11 +22,11 @@ Date: 02/2013
 ******************************************************************************/
 #include "dccp2tcp.h"
 
-int isClosed(struct hcon *A, struct hcon *B, int pkt_type);
+int isClosed(struct hcon *A, struct hcon *B, enum dccp_pkt_type pkt_type);
 
 /*Lookup a connection. If it doesn't exist, add a new connection and return it.*/
 int get_host(u_char *src_id, u_char* dest_id, int id_len, int src_port, int dest_port,
-		int pkt_type, struct hcon **fwd, struct hcon **rev){
+		enum dccp_pkt_type pkt_type, struct hcon **fwd, struct hcon **rev){
 	struct connection *ptr;
 
 	/*Empty list*/
@@ -69,7 +69,7 @@ int get_host(u_char *src_id, u_char* dest_id, int id_len, int src_port, int dest
 
 /*Returns true if the connection is closed and any packets should go to
  * a new connection with the same four-tuple*/
-int isClosed(struct hcon *A, struct hcon *B, int pkt_type){
+int isClosed(struct hcon *A, struct hcon *B, enum dccp_pkt_type pkt_type){
 	if(pkt_type==DCCP_PKT_REQUEST || pkt_type==DCCP_PKT_RESPONSE){
 		if(A->state==CLOSE && B->state==CLOSE){
 			/*We're opening a new connection on hosts/ports we've used before, mark
@@ -154,7 +154,7 @@ return;
 }
 
 /* Setup Half Connection Structure*/
-u_int32_t initialize_hcon(struct hcon *hcn, __be32 initial)
+u_int32_t initialize_hcon(struct hcon *hcn, d_seq_num initial)
 {
 	/*set default values*/
 	hcn->cur=0;
@@ -178,7 +178,7 @@ return initial;
 }
 
 /*Convert Sequence Numbers*/
-u_int32_t add_new_seq(struct hcon *hcn, __be32 num, int size, enum dccp_pkt_type type)
+u_int32_t add_new_seq(struct hcon *hcn, d_seq_num num, int size, enum dccp_pkt_type type)
 {
 	int prev;
 	if(hcn==NULL){
@@ -230,7 +230,7 @@ return hcn->table[hcn->cur].new +1;
 }
 
 /*Convert Ack Numbers*/
-u_int32_t convert_ack(struct hcon *hcn, __be32 num, struct hcon *o_hcn)
+u_int32_t convert_ack(struct hcon *hcn, d_seq_num num, struct hcon *o_hcn)
 {
 	if(hcn==NULL){
 		dbgprintf(0,"ERROR NULL POINTER!\n");
@@ -255,7 +255,7 @@ return o_hcn->high_ack;
 }
 
 /* Get size of packet being acked*/
-int acked_packet_size(struct hcon *hcn, __be32 num)
+int acked_packet_size(struct hcon *hcn, d_seq_num num)
 {
 	if(hcn==NULL){
 		dbgprintf(0,"ERROR NULL POINTER!\n");

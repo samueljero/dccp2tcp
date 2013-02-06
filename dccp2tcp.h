@@ -56,8 +56,11 @@ Notes:
 #define MAX_PACKET 	1600	/*Maximum size of TCP packet */
 #define	TBL_SZ		40000	/*Size of Sequence Number Table*/
 
+
 #define TRUE 1
 #define FALSE 0
+typedef __be16 dccp_port;
+typedef __be32 d_seq_num;
 
 /*Packet structure*/
 struct packet{
@@ -99,7 +102,7 @@ enum con_type{
 struct hcon{
 	int					id_len;	/*Length of ID*/
 	u_char 				*id;	/*Host ID*/
-	__be16				port;	/*Host DCCP port*/
+	dccp_port 			port;	/*Host DCCP port*/
 	struct tbl			*table;	/*Host Sequence Number Table*/
 	int					size;	/*Size of Sequence Number Table*/
 	int					cur;	/*Current TCP Sequence Number*/
@@ -117,7 +120,7 @@ struct connection{
 
 /*sequence number table structure */
 struct tbl{
-	__be32 				old;	/*DCCP sequence number */
+	d_seq_num 			old;	/*DCCP sequence number */
 	u_int32_t			new;	/*TCP sequence number */
 	int					size;	/*packet size*/
 	enum dccp_pkt_type 	type;	/*packet type*/
@@ -144,17 +147,17 @@ int do_encap(int link, struct packet *new, const struct const_packet *old);
 
 /*Connection functions*/
 int get_host(u_char *src_id, u_char* dest_id, int id_len, int src_port, int dest_port,
-		int pkt_type, struct hcon **fwd, struct hcon **rev);
+		enum dccp_pkt_type pkt_type, struct hcon **fwd, struct hcon **rev);
 struct connection *add_connection(u_char *src_id, u_char* dest_id, int id_len,
 		int src_port, int dest_port);
 int update_state(struct hcon* hst, enum con_state st);
 void cleanup_connections();
 
 /*Half Connection/Sequence number functions*/
-u_int32_t initialize_hcon(struct hcon *hcn, __be32 initial);
-u_int32_t add_new_seq(struct hcon *hcn, __be32 num, int size, enum dccp_pkt_type type);
-u_int32_t convert_ack(struct hcon *hcn, __be32 num, struct hcon *o_hcn);
-int acked_packet_size(struct hcon *hcn, __be32 num);
+u_int32_t initialize_hcon(struct hcon *hcn, d_seq_num initial);
+u_int32_t add_new_seq(struct hcon *hcn, d_seq_num num, int size, enum dccp_pkt_type type);
+u_int32_t convert_ack(struct hcon *hcn, d_seq_num num, struct hcon *o_hcn);
+int acked_packet_size(struct hcon *hcn, d_seq_num num);
 unsigned int interp_ack_vect(u_char* hdr);
 
 #endif

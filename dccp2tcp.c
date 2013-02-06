@@ -56,7 +56,7 @@ int handle_data(struct packet* new, const struct const_packet* old, struct hcon*
 int parse_options(const u_char* opt_start, int len, struct hcon* A, struct hcon* B);
 int process_feature(const u_char* feat, int len, int confirm, int L, struct hcon* A, struct hcon* B);
 void ack_vect2sack(struct hcon *seq, struct tcphdr *tcph, u_char* tcpopts, u_char* dccphdr,
-				__be32 dccpack, struct hcon* o_hcn);
+				d_seq_num dccpack, struct hcon* o_hcn);
 void version();
 void usage();
 
@@ -1058,13 +1058,13 @@ int process_feature(const u_char* feat, int len, int confirm, int L, struct hcon
 
 /*Ack Vector to SACK Option*/
 void ack_vect2sack(struct hcon *hcn, struct tcphdr *tcph, u_char* tcpopts, u_char* dccphdr,
-																__be32 dccpack, struct hcon* o_hcn)
+																d_seq_num dccpack, struct hcon* o_hcn)
 {
 	int hdrlen=((struct dccp_hdr*)dccphdr)->dccph_doff*4;
 	int optlen;
 	int len;
 	int tmp;
-	__be32 bp;
+	d_seq_num bp;
 	u_char* temp;
 	u_char* opt;
 	u_char* cur;
