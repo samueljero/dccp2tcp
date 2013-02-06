@@ -70,6 +70,7 @@ struct packet{
 	int					id_len; /*Length of IDs*/
 	u_char				*src_id; /*Source ID of packet*/
 	u_char				*dest_id;/*Destination ID of packet*/
+	char* 				(*print_id)(char* buf, int len, u_char* id, int id_len); /*Function to print ID*/
 };
 
 /*Constant Packet structure*/
@@ -80,6 +81,7 @@ struct const_packet{
 	int						id_len; /*Length of IDs*/
 	u_char					*src_id; /*Source ID of packet*/
 	u_char					*dest_id;/*Destination ID of packet*/
+	char* 					(*print_id)(char* buf, int len, u_char* id, int id_len); /*Function to print ID*/
 };
 
 /*Connection states*/

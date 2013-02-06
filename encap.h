@@ -52,6 +52,10 @@ Date: 11/2012
  *  						need to set this field. Typically this would be an
  *  						IP address.
  *
+ *  	char* (*print_id)(char* buf, int len, u_char* id, int id_len):
+ *  						This is a function to pretty-print the destination or
+ *  						source ID to the given buffer.
+ *
  *	struct const_packet *old:	The Old packet. It contains the following fields.
  *
  *  	u_char* data:		This is a pointer to the buffer containing the
@@ -75,5 +79,9 @@ int ethernet_encap(struct packet *new, const struct const_packet *old);
 int linux_cooked_encap(struct packet *new, const struct const_packet *old);
 int ipv4_encap(struct packet *new, const struct const_packet *old);
 int ipv6_encap(struct packet *new, const struct const_packet *old);
+
+/*Standard Print Functions*/
+char* print_ipv6(char* buf, int len, u_char* id, int id_len);
+char* print_ipv4(char* buf, int len, u_char* id, int id_len);
 
 #endif /* ENCAP_H_ */

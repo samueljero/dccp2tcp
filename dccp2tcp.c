@@ -53,10 +53,12 @@ int handle_reset(struct packet* new, const struct const_packet* old, struct hcon
 int handle_sync(struct packet* new, const struct const_packet* old, struct hcon* h1, struct hcon* h2);
 int handle_syncack(struct packet* new, const struct const_packet* old, struct hcon* h1, struct hcon* h2);
 int handle_data(struct packet* new, const struct const_packet* old, struct hcon* h1, struct hcon* h2);
-int parse_options(const u_char* opt_start, int len, struct hcon* A, struct hcon* B);
-int process_feature(const u_char* feat, int len, int confirm, int L, struct hcon* A, struct hcon* B);
-void ack_vect2sack(struct hcon *seq, struct tcphdr *tcph, u_char* tcpopts, u_char* dccphdr,
-				d_seq_num dccpack, struct hcon* o_hcn);
+int parse_options(const u_char* opt_start, int len,
+			const struct const_packet* pkt, struct hcon* A, struct hcon* B);
+int process_feature(const u_char* feat, int len, int confirm, int L,
+			const struct const_packet* pkt, struct hcon* A, struct hcon* B);
+void ack_vect2sack(struct hcon *seq, struct tcphdr *tcph,
+			u_char* tcpopts, u_char* dccphdr, d_seq_num dccpack, struct hcon* o_hcn);
 void version();
 void usage();
 
@@ -220,6 +222,8 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 	struct dccp_hdr_ext 		*dccphex;
 	struct hcon					*h1=NULL;
 	struct hcon					*h2=NULL;
+	char buf1[100];
+	char buf2[100];
 
 	/*Safety checks*/
 	if(!new || !old || !new->data || !old->data || !new->h || !old->h){
@@ -258,8 +262,14 @@ int convert_packet(struct packet *new, const struct const_packet* old)
 		return 0;
 	}
 	if(h1->state==IGNORE || h2->state==IGNORE){
-		dbgprintf(2, "Ignoring packet between %i and %i\n",
-						ntohs(dccph->dccph_sport), ntohs(dccph->dccph_dport));
+		if(old->print_id){
+			dbgprintf(2,"Ignoring packet between %s:%i and %s:%i\n",
+				old->print_id(buf1,100,old->src_id,old->id_len),ntohs(dccph->dccph_sport),
+				old->print_id(buf2,100,old->dest_id,old->id_len), ntohs(dccph->dccph_dport));
+		}else{
+			dbgprintf(2,"Ignoring packet between %i and %i\n",
+					ntohs(dccph->dccph_sport), ntohs(dccph->dccph_dport));
+		}
 		return 0;
 	}
 
@@ -385,7 +395,7 @@ int handle_request(struct packet* new, const struct const_packet* old, struct hc
 	/*Process DCCP Options*/
 	dccpopt=old->data + sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext)+sizeof(struct dccp_hdr_request);
 	optlen=dccph->dccph_doff*4 - sizeof(struct dccp_hdr)-sizeof(struct dccp_hdr_ext)-sizeof(struct dccp_hdr_request);
-	if(!parse_options(dccpopt,optlen,h1,h2)){
+	if(!parse_options(dccpopt,optlen,old,h1,h2)){
 		return 0;
 	}
 
@@ -445,7 +455,7 @@ int handle_response(struct packet* new, const struct const_packet* old, struct h
 			sizeof(struct dccp_hdr_ack_bits) + sizeof(struct dccp_hdr_request);
 	optlen=dccph->dccph_doff*4 - sizeof(struct dccp_hdr) - sizeof(struct dccp_hdr_ext)
 			- sizeof(struct dccp_hdr_ack_bits) - sizeof(struct dccp_hdr_request);
-	if(!parse_options(dccpopt,optlen,h1,h2)){
+	if(!parse_options(dccpopt,optlen,old,h1,h2)){
 		return 0;
 	}
 
@@ -509,7 +519,7 @@ int handle_dataack(struct packet* new, const struct const_packet* old, struct hc
 	/*Process DCCP Options*/
 	dccpopt=old->data + sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext) + sizeof(struct dccp_hdr_ack_bits);
 	optlen=dccph->dccph_doff*4 - sizeof(struct dccp_hdr) - sizeof(struct dccp_hdr_ext) - sizeof(struct dccp_hdr_ack_bits);
-	if(!parse_options(dccpopt,optlen,h1,h2)){
+	if(!parse_options(dccpopt,optlen,old,h1,h2)){
 		return 0;
 	}
 
@@ -566,7 +576,7 @@ int handle_ack(struct packet* new, const struct const_packet* old, struct hcon* 
 	/*Process DCCP Options*/
 	dccpopt=old->data + sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext) + sizeof(struct dccp_hdr_ack_bits);
 	optlen=dccph->dccph_doff*4 - sizeof(struct dccp_hdr) - sizeof(struct dccp_hdr_ext) - sizeof(struct dccp_hdr_ack_bits);
-	if(!parse_options(dccpopt,optlen,h1,h2)){
+	if(!parse_options(dccpopt,optlen,old,h1,h2)){
 		return 0;
 	}
 
@@ -623,7 +633,7 @@ int handle_closereq(struct packet* new, const struct const_packet* old, struct h
 	/*Process DCCP Options*/
 	dccpopt=old->data + sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext) + sizeof(struct dccp_hdr_ack_bits);
 	optlen=dccph->dccph_doff*4 - sizeof(struct dccp_hdr) - sizeof(struct dccp_hdr_ext) - sizeof(struct dccp_hdr_ack_bits);
-	if(!parse_options(dccpopt,optlen,h1,h2)){
+	if(!parse_options(dccpopt,optlen,old,h1,h2)){
 		return 0;
 	}
 
@@ -677,7 +687,7 @@ int handle_close(struct packet* new, const struct const_packet* old, struct hcon
 	/*Process DCCP Options*/
 	dccpopt=old->data + sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext) + sizeof(struct dccp_hdr_ack_bits);
 	optlen=dccph->dccph_doff*4 - sizeof(struct dccp_hdr) - sizeof(struct dccp_hdr_ext) - sizeof(struct dccp_hdr_ack_bits);
-	if(!parse_options(dccpopt,optlen,h1,h2)){
+	if(!parse_options(dccpopt,optlen,old,h1,h2)){
 		return 0;
 	}
 
@@ -732,7 +742,7 @@ int handle_reset(struct packet* new, const struct const_packet* old, struct hcon
 	/*Process DCCP Options*/
 	dccpopt=old->data + sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext) + sizeof(struct dccp_hdr_ack_bits);
 	optlen=dccph->dccph_doff*4 - sizeof(struct dccp_hdr) - sizeof(struct dccp_hdr_ext) - sizeof(struct dccp_hdr_ack_bits);
-	if(!parse_options(dccpopt,optlen,h1,h2)){
+	if(!parse_options(dccpopt,optlen,old,h1,h2)){
 		return 0;
 	}
 
@@ -789,7 +799,7 @@ int handle_sync(struct packet* new, const struct const_packet* old, struct hcon*
 	/*Process DCCP Options*/
 	dccpopt=old->data + sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext) + sizeof(struct dccp_hdr_ack_bits);
 	optlen=dccph->dccph_doff*4 - sizeof(struct dccp_hdr) - sizeof(struct dccp_hdr_ext) - sizeof(struct dccp_hdr_ack_bits);
-	if(!parse_options(dccpopt,optlen,h1,h2)){
+	if(!parse_options(dccpopt,optlen,old,h1,h2)){
 		return 0;
 	}
 
@@ -845,7 +855,7 @@ int handle_syncack(struct packet* new, const struct const_packet* old, struct hc
 	/*Process DCCP Options*/
 	dccpopt=old->data + sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext) + sizeof(struct dccp_hdr_ack_bits);
 	optlen=dccph->dccph_doff*4 - sizeof(struct dccp_hdr) - sizeof(struct dccp_hdr_ext) - sizeof(struct dccp_hdr_ack_bits);
-	if(!parse_options(dccpopt,optlen,h1,h2)){
+	if(!parse_options(dccpopt,optlen,old,h1,h2)){
 		return 0;
 	}
 
@@ -906,7 +916,7 @@ int handle_data(struct packet* new, const struct const_packet* old, struct hcon*
 	/*Process DCCP Options*/
 	dccpopt=old->data + sizeof(struct dccp_hdr) + sizeof(struct dccp_hdr_ext);
 	optlen=dccph->dccph_doff*4 - sizeof(struct dccp_hdr) - sizeof(struct dccp_hdr_ext);
-	if(!parse_options(dccpopt,optlen,h1,h2)){
+	if(!parse_options(dccpopt,optlen,old,h1,h2)){
 		return 0;
 	}
 
@@ -927,11 +937,14 @@ int handle_data(struct packet* new, const struct const_packet* old, struct hcon*
 	return 1;
 }
 
-int parse_options(const u_char* opt_start, int len, struct hcon* A, struct hcon* B)
+int parse_options(const u_char* opt_start, int len, const struct const_packet* pkt,
+																	struct hcon* A,	struct hcon* B)
 {
 	int optlen;
 	int length;
 	const u_char* opt;
+	char buf1[100];
+	char buf2[100];
 
 	/*setup pointer to DCCP options and determine how long the options are*/
 	optlen=len;
@@ -961,8 +974,14 @@ int parse_options(const u_char* opt_start, int len, struct hcon* A, struct hcon*
 		if(*opt==38 || *opt==39){
 			if(B->type==UNKNOWN){
 				B->type=CCID2;
-				dbgprintf(1,"Half-connection from port %i to %i probably using CCID 2\n",
-											ntohs(B->port),ntohs(A->port));
+				if(pkt->print_id){
+					dbgprintf(1,"Half-connection from %s:%i to %s:%i probably using CCID 2\n",
+						pkt->print_id(buf1,100,pkt->dest_id,pkt->id_len),ntohs(B->port),
+						pkt->print_id(buf2,100,pkt->src_id,pkt->id_len), ntohs(A->port));
+				}else{
+					dbgprintf(1,"Half-connection from  port %i to %i probably using CCID 2\n",
+						ntohs(B->port),ntohs(A->port));
+				}
 			}
 		}
 
@@ -970,33 +989,39 @@ int parse_options(const u_char* opt_start, int len, struct hcon* A, struct hcon*
 		if(*opt==37){
 			if(B->type==UNKNOWN){
 				B->type=CCID3;
-				dbgprintf(1,"Half-connection from port %i to %i probably using CCID 3\n",
-											ntohs(B->port),ntohs(A->port));
+				if(pkt->print_id){
+					dbgprintf(1,"Half-connection from %s:%i to %s:%i probably using CCID 3\n",
+						pkt->print_id(buf1,100,pkt->dest_id,pkt->id_len),ntohs(B->port),
+						pkt->print_id(buf2,100,pkt->src_id,pkt->id_len), ntohs(A->port));
+				}else{
+					dbgprintf(1,"Half-connection from  port %i to %i probably using CCID 3\n",
+						ntohs(B->port),ntohs(A->port));
+				}
 			}
 		}
 
 		/*Feature negotation*/
 		if(*opt==32){
 			/*Change L*/
-			if(!process_feature(opt+2,length-2,FALSE,TRUE,A,B)){
+			if(!process_feature(opt+2,length-2,FALSE,TRUE,pkt,A,B)){
 				return 0;
 			}
 		}
 		if(*opt==33){
 			/*Confirm L*/
-			if(!process_feature(opt+2,length-2,TRUE,TRUE,A,B)){
+			if(!process_feature(opt+2,length-2,TRUE,TRUE,pkt,A,B)){
 				return 0;
 			}
 		}
 		if(*opt==34){
 			/*Change R*/
-			if(!process_feature(opt+2,length-2,FALSE,FALSE,A,B)){
+			if(!process_feature(opt+2,length-2,FALSE,FALSE,pkt,A,B)){
 				return 0;
 			}
 		}
 		if(*opt==35){
 			/*Confirm R*/
-			if(!process_feature(opt+2,length-2,TRUE,FALSE,A,B)){
+			if(!process_feature(opt+2,length-2,TRUE,FALSE,pkt,A,B)){
 				return 0;
 			}
 		}
@@ -1008,10 +1033,13 @@ int parse_options(const u_char* opt_start, int len, struct hcon* A, struct hcon*
 	return 1;
 }
 
-int process_feature(const u_char* feat, int len, int confirm, int L, struct hcon* A, struct hcon* B)
+int process_feature(const u_char* feat, int len, int confirm, int L,
+							const struct const_packet* pkt, struct hcon* A,	struct hcon* B)
 {
 	const u_char* val;
 	int ccid;
+	char buf1[100];
+	char buf2[100];
 
 	val=feat+1;
 
@@ -1032,12 +1060,24 @@ int process_feature(const u_char* feat, int len, int confirm, int L, struct hcon
 				}
 				if(L==TRUE){
 					B->type=ccid;
-					dbgprintf(1,"Half-connection from port %i to %i using CCID %i\n",
+					if(pkt->print_id){
+						dbgprintf(1,"Half-connection from %s:%i to %s:%i using CCID %i\n",
+							pkt->print_id(buf1,100,pkt->dest_id,pkt->id_len),ntohs(B->port),
+							pkt->print_id(buf2,100,pkt->src_id,pkt->id_len), ntohs(A->port), *val);
+					}else{
+						dbgprintf(1,"Half-connection from  port %i to %i using CCID %i\n",
 							ntohs(B->port),ntohs(A->port), *val);
+					}
 				}else{
 					A->type=ccid;
-					dbgprintf(1,"Half-connection from port %i to %i using CCID %i\n",
+					if(pkt->print_id){
+						dbgprintf(1,"Half-connection from %s:%i to %s:%i using CCID %i\n",
+							pkt->print_id(buf1,100,pkt->src_id,pkt->id_len),ntohs(A->port),
+							pkt->print_id(buf2,100,pkt->dest_id,pkt->id_len), ntohs(B->port), *val);
+					}else{
+						dbgprintf(1,"Half-connection from  port %i to %i using CCID %i\n",
 							ntohs(A->port),ntohs(B->port), *val);
+					}
 				}
 			}
 			break;

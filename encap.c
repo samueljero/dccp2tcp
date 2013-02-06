@@ -25,6 +25,7 @@ Date: 11/2012
 #include "checksums.h"
 #include <pcap/sll.h>
 #include <netinet/ip6.h>
+#include <netdb.h>
 
 /*Encapsulation start point and link layer selector*/
 int do_encap(int link, struct packet *new, const struct const_packet *old)
@@ -92,6 +93,14 @@ int ethernet_encap(struct packet *new, const struct const_packet *old)
 		nnew.length= new->length - sizeof(struct ether_header);
 		nnew.h=new->h;
 		nold.h=old->h;
+		nnew.print_id=NULL;
+		nnew.dest_id=NULL;
+		nnew.src_id=NULL;
+		nnew.id_len=0;
+		nold.print_id=NULL;
+		nold.dest_id=NULL;
+		nold.src_id=NULL;
+		nold.id_len=0;
 
 		/*Select Next Protocol*/
 		switch(ntohs(ethh->ether_type)){
@@ -146,6 +155,10 @@ int ipv6_encap(struct packet *new, const struct const_packet *old)
 		nnew.length= new->length - sizeof(struct ip6_hdr);
 		nnew.h=new->h;
 		nold.h=old->h;
+		nnew.print_id=print_ipv6;
+		nold.print_id=print_ipv6;
+		nnew.id_len=16;
+		nold.id_len=16;
 
 		/*Confirm that this is IPv6*/
 		if((ntohl(iph->ip6_ctlun.ip6_un1.ip6_un1_flow) & (0xF0000000)) == (60000000)){
@@ -157,15 +170,19 @@ int ipv6_encap(struct packet *new, const struct const_packet *old)
 		switch(iph->ip6_ctlun.ip6_un1.ip6_un1_nxt){
 			case 33:
 					/*DCCP*/
-					nnew.id_len=16;
 					nnew.src_id=malloc(nnew.id_len);
 					nnew.dest_id=malloc(nnew.id_len);
-					if(nnew.src_id==NULL||nnew.dest_id==NULL){
+					nold.src_id=malloc(nold.id_len);
+					nold.dest_id=malloc(nold.id_len);
+					if(nnew.src_id==NULL||nnew.dest_id==NULL ||
+						nold.src_id==NULL||nold.dest_id==NULL){
 						dbgprintf(0,"Error: Couldn't allocate Memory\n");
 						exit(1);
 					}
 					memcpy(nnew.src_id,&iph->ip6_src,nnew.id_len);
 					memcpy(nnew.dest_id,&iph->ip6_dst,nnew.id_len);
+					memcpy(nold.src_id,&iph->ip6_src,nold.id_len);
+					memcpy(nold.dest_id,&iph->ip6_dst,nold.id_len);
 					if(!convert_packet(&nnew, &nold)){
 						return 0;
 					}
@@ -194,6 +211,8 @@ int ipv6_encap(struct packet *new, const struct const_packet *old)
 		/*Cleanup*/
 		free(nnew.dest_id);
 		free(nnew.src_id);
+		free(nold.dest_id);
+		free(nold.src_id);
 return 1;
 }
 
@@ -227,6 +246,10 @@ int ipv4_encap(struct packet *new, const struct const_packet *old)
 		nnew.length= new->length -iph->ihl*4;
 		nnew.h=new->h;
 		nold.h=old->h;
+		nnew.print_id=print_ipv4;
+		nold.print_id=print_ipv4;
+		nnew.id_len=4;
+		nold.id_len=4;
 
 		/*Confirm that this is IPv4*/
 		if(iph->version!=4){
@@ -238,15 +261,19 @@ int ipv4_encap(struct packet *new, const struct const_packet *old)
 		switch(iph->protocol){
 			case 33:
 					/*DCCP*/
-					nnew.id_len=4;
 					nnew.src_id=malloc(nnew.id_len);
 					nnew.dest_id=malloc(nnew.id_len);
-					if(nnew.src_id==NULL||nnew.dest_id==NULL){
+					nold.src_id=malloc(nold.id_len);
+					nold.dest_id=malloc(nold.id_len);
+					if(nnew.src_id==NULL||nnew.dest_id==NULL||
+							nold.src_id==NULL||nold.dest_id==NULL){
 						dbgprintf(0,"Error: Couldn't allocate Memory\n");
 						exit(1);
 					}
 					memcpy(nnew.src_id,&iph->saddr,nnew.id_len);
 					memcpy(nnew.dest_id,&iph->daddr,nnew.id_len);
+					memcpy(nold.src_id,&iph->saddr,nold.id_len);
+					memcpy(nold.dest_id,&iph->daddr,nold.id_len);
 					if(!convert_packet(&nnew, &nold)){
 						return 0;
 					}
@@ -280,6 +307,8 @@ int ipv4_encap(struct packet *new, const struct const_packet *old)
 		/*Cleanup*/
 		free(nnew.src_id);
 		free(nnew.dest_id);
+		free(nold.src_id);
+		free(nold.dest_id);
 return 1;
 }
 
@@ -313,6 +342,14 @@ int linux_cooked_encap(struct packet *new, const struct const_packet *old)
 	nnew.length= new->length- sizeof(struct sll_header);
 	nnew.h=new->h;
 	nold.h=old->h;
+	nnew.print_id=NULL;
+	nnew.dest_id=NULL;
+	nnew.src_id=NULL;
+	nnew.id_len=0;
+	nold.print_id=NULL;
+	nold.dest_id=NULL;
+	nold.src_id=NULL;
+	nold.id_len=0;
 
 	/*Confirm that this is SLL*/
 	if(ntohs(slh->sll_pkttype) > 4){
@@ -341,4 +378,39 @@ int linux_cooked_encap(struct packet *new, const struct const_packet *old)
 	/*Adjust length*/
 	new->length=nnew.length + sizeof(struct sll_header);
 return 1;
+}
+
+
+char *print_ipv6(char* buf, int len, u_char* id, int id_len)
+{
+	struct sockaddr_in6 sa;
+
+	if(buf==NULL){
+		return NULL;
+	}
+
+	memcpy(&sa.sin6_addr, id, id_len);
+	sa.sin6_family=AF_INET6;
+	if(getnameinfo((struct sockaddr*)&sa, sizeof(struct sockaddr_in6),
+											buf, len, NULL,0,NI_NUMERICHOST)<0){
+		return NULL;
+	}
+	return buf;
+}
+
+char *print_ipv4(char* buf, int len, u_char* id, int id_len)
+{
+	struct sockaddr_in sa;
+
+	if(buf==NULL){
+		return NULL;
+	}
+
+	memcpy(&sa.sin_addr, id, id_len);
+	sa.sin_family=AF_INET;
+	if(getnameinfo((struct sockaddr*)&sa, sizeof(struct sockaddr_in),
+											buf, len, NULL,0,NI_NUMERICHOST)<0){
+		return NULL;
+	}
+	return buf;
 }
