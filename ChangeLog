@@ -1,3 +1,16 @@
+02/05/2013:
+	Release 1.6:
+	Improvements:
+	1)CCID 3 Support!!
+	2)IPv6 Support!!
+	3)Checksum Support!!
+	4)man page
+	5)Version and usage information in binary
+	Bug Fixes:
+	1)Improved connection support to prevent odd behavior with multiple Resets
+	Interface Changes:
+	1)Debug flag (-d) is now Verbose flag (-v)
+
 11/29/2011
 	Release 1.5:
 	Improvements:
