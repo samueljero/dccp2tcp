@@ -76,6 +76,7 @@ int convert_packet(struct packet *new, const struct const_packet *old);
 
 /*Standard Encapsulation Functions*/
 int ethernet_encap(struct packet *new, const struct const_packet *old);
+int ethernet_vlan_encap(struct packet *new, const struct const_packet *old);
 int linux_cooked_encap(struct packet *new, const struct const_packet *old);
 int ipv4_encap(struct packet *new, const struct const_packet *old);
 int ipv6_encap(struct packet *new, const struct const_packet *old);

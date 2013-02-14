@@ -24,6 +24,7 @@ Date: 11/2012
 #include "encap.h"
 #include "checksums.h"
 #include <pcap/sll.h>
+#include <pcap/vlan.h>
 #include <netinet/ip6.h>
 #include <netdb.h>
 
@@ -114,6 +115,11 @@ int ethernet_encap(struct packet *new, const struct const_packet *old)
 							return 0;
 					}
 					break;
+			case ETHERTYPE_VLAN:
+					if(!ethernet_vlan_encap(&nnew, &nold)){
+							return 0;
+					}
+					break;
 			default:
 					dbgprintf(1, "Unknown Next Protocol at Ethernet\n");
 					return 0;
@@ -122,6 +128,73 @@ int ethernet_encap(struct packet *new, const struct const_packet *old)
 
 		/*Adjust length*/
 		new->length=nnew.length + sizeof(struct ether_header);
+return 1;
+}
+
+/*Ethernet 802.1Q VLAN Encapsulation*/
+int ethernet_vlan_encap(struct packet *new, const struct const_packet *old)
+{
+		struct vlan_tag		*tag;
+		struct const_packet nold;
+		struct packet 		nnew;
+
+		/*Safety checks*/
+		if(!new || !old || !new->data || !old->data || !new->h || !old->h){
+			dbgprintf(0,"Error: Ethernet VLAN Encapsulation Function given bad data!\n");
+			return 0;
+		}
+		if(old->length < sizeof(struct vlan_tag) || new->length < sizeof(struct vlan_tag)){
+			dbgprintf(0, "Error: Ethernet VLAN Encapsulation Function given packet of wrong size!\n");
+			return 0;
+		}
+
+		/*Copy VLAN tag over*/
+		memcpy(new->data, old->data, sizeof(struct vlan_tag));
+
+		/*Cast Pointer*/
+		tag=(struct vlan_tag*)(new->data);
+
+		/*Adjust pointers and lengths*/
+		nold.data= old->data+ sizeof(struct vlan_tag);
+		nnew.data= new->data + sizeof(struct vlan_tag);
+		nold.length= old->length - sizeof(struct vlan_tag);
+		nnew.length= new->length - sizeof(struct vlan_tag);
+		nnew.h=new->h;
+		nold.h=old->h;
+		nnew.print_id=NULL;
+		nnew.dest_id=NULL;
+		nnew.src_id=NULL;
+		nnew.id_len=0;
+		nold.print_id=NULL;
+		nold.dest_id=NULL;
+		nold.src_id=NULL;
+		nold.id_len=0;
+
+		/*Select Next Protocol*/
+		switch(ntohs(tag->vlan_tci)){
+			case ETHERTYPE_IP:
+					if(!ipv4_encap(&nnew, &nold)){
+							return 0;
+					}
+					break;
+			case ETHERTYPE_IPV6:
+					if(!ipv6_encap(&nnew, &nold)){
+							return 0;
+					}
+					break;
+			case ETHERTYPE_VLAN:
+					if(!ethernet_vlan_encap(&nnew, &nold)){
+							return 0;
+					}
+					break;
+			default:
+					dbgprintf(1, "Unknown Next Protocol at Ethernet VLAN tag\n");
+					return 0;
+					break;
+		}
+
+		/*Adjust length*/
+		new->length=nnew.length + sizeof(struct vlan_tag);
 return 1;
 }
 
